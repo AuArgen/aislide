@@ -1,18 +1,21 @@
 import { redirect } from 'next/navigation'
+import { getCurrentSession } from '@/lib/auth/auth-helpers'
 import { createClient } from '@/lib/supabase/server'
 
 export default async function AdminPage() {
-  const supabase = await createClient()
-  const { data: { session } } = await supabase.auth.getSession()
+  const session = await getCurrentSession()
 
   if (!session) {
     redirect('/')
   }
 
+  const googleId = session.user.user_metadata.google_id
+
+  const supabase = await createClient()
   const { data: user } = await supabase
     .from('users')
     .select('role')
-    .eq('google_id', session.user.id)
+    .eq('google_id', googleId)
     .single()
 
   if (user?.role !== 'admin') {

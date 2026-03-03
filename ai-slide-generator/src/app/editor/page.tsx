@@ -1,9 +1,8 @@
 import { redirect } from 'next/navigation'
-import { createClient } from '@/lib/supabase/server'
+import { getCurrentSession } from '@/lib/auth/auth-helpers'
 
 export default async function EditorPage() {
-  const supabase = await createClient()
-  const { data: { session } } = await supabase.auth.getSession()
+  const session = await getCurrentSession()
 
   if (!session) {
     redirect('/')

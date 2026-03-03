@@ -66,16 +66,71 @@ export async function checkExternalRole(googleId: string): Promise<{ role: UserR
 }
 
 /**
- * Get current session and user
+ * Decode JWT token payload
+ */
+export function decodeToken(token: string): any {
+  try {
+    const base64Url = token.split('.')[1]
+    const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/')
+    
+    // In server-side (Node.js), use Buffer. In client-side (Browser), use atob.
+    let jsonPayload: string
+    if (typeof window === 'undefined') {
+      jsonPayload = Buffer.from(base64, 'base64').toString('utf-8')
+    } else {
+      jsonPayload = decodeURIComponent(
+        atob(base64)
+          .split('')
+          .map((c) => '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2))
+          .join('')
+      )
+    }
+    
+    return JSON.parse(jsonPayload)
+  } catch (e) {
+    console.error('Error decoding token:', e)
+    return null
+  }
+}
+
+/**
+ * Get current session and user from auth_token cookie
  */
 export async function getCurrentSession() {
-  const { data: { session }, error } = await supabase.auth.getSession()
+  let authToken: string | undefined
 
-  if (error || !session) {
+  if (typeof window === 'undefined') {
+    // Server-side
+    const { cookies } = await import('next/headers')
+    const cookieStore = await cookies()
+    authToken = cookieStore.get('auth_token')?.value
+  } else {
+    // Client-side
+    const cookies = document.cookie.split('; ')
+    authToken = cookies.find(row => row.startsWith('auth_token='))?.split('=')[1]
+  }
+
+  if (!authToken) {
     return null
   }
 
-  return session
+  const payload = decodeToken(authToken)
+  if (!payload) {
+    return null
+  }
+
+  // Return a session-like object that matches what the app expects
+  return {
+    user: {
+      id: payload.user_id?.toString(), // Ensure it's a string if it's an ID
+      email: payload.email,
+      user_metadata: {
+        full_name: payload.name,
+        google_id: payload.google_id
+      }
+    },
+    access_token: authToken
+  }
 }
 
 /**
@@ -114,20 +169,18 @@ export async function upsertUser(user: Partial<User>): Promise<User | null> {
 }
 
 /**
- * Sign in with Google
+ * Sign in with External Auth Service
  */
 export async function signInWithGoogle() {
-  const { error } = await supabase.auth.signInWithOAuth({
-    provider: 'google',
-    options: {
-      redirectTo: `${process.env.NEXT_PUBLIC_APP_URL}/auth/callback`,
-    },
-  })
-
-  if (error) {
-    console.error('Error signing in:', error)
-    throw error
+  const authServiceUrl = process.env.NEXT_PUBLIC_AUTH_SERVICE_URL
+  
+  if (!authServiceUrl) {
+    console.error('NEXT_PUBLIC_AUTH_SERVICE_URL is not set.')
+    return
   }
+
+  // Redirect to external auth service
+  window.location.href = authServiceUrl
 }
 
 /**

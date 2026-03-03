@@ -1,22 +1,35 @@
 import Link from 'next/link'
-import { createClient } from '@/lib/supabase/server'
+import { getCurrentSession, getUserByGoogleId } from '@/lib/auth/auth-helpers'
 import { getUserSubscription, getUserPresentations } from '@/lib/actions/user'
 import { PresentationForm } from '@/components/user/PresentationForm'
 
 export default async function DashboardPage() {
-  const supabase = await createClient()
-  const { data: { session } } = await supabase.auth.getSession()
+  const session = await getCurrentSession()
 
   if (!session) {
     return (
       <div className="container mx-auto px-4 py-12 text-center">
-        <h1 className="text-2xl font-bold">Кирүү керек</h1>
+        <h1 className="text-2xl font-bold mb-4">Кирүү керек</h1>
+        <Link href="/" className="text-blue-600 hover:underline">Башкы бетке кайтуу</Link>
       </div>
     )
   }
 
-  const subscription = await getUserSubscription(session.user.id)
-  const presentations = await getUserPresentations(session.user.id)
+  const googleId = session.user.user_metadata.google_id
+  const fullName = session.user.user_metadata.full_name || session.user.email.split('@')[0]
+
+  const user = await getUserByGoogleId(googleId)
+
+  if (!user) {
+    return (
+      <div className="container mx-auto px-4 py-12 text-center">
+        <h1 className="text-2xl font-bold">Колдонуучу табылган жок</h1>
+      </div>
+    )
+  }
+
+  const subscription = await getUserSubscription(user.id)
+  const presentations = await getUserPresentations(user.id)
 
   const isPremium = subscription?.status === 'active'
   const isPending = subscription?.status === 'pending'
@@ -27,7 +40,7 @@ export default async function DashboardPage() {
         <div className="flex justify-between items-center mb-12">
           <div>
             <h1 className="text-3xl font-extrabold text-gray-900">Жеке кабинет</h1>
-            <p className="text-gray-500">Кош келиңиз, {session.user.user_metadata.full_name}</p>
+            <p className="text-gray-500">Кош келиңиз, {fullName}</p>
           </div>
           <div className="flex items-center gap-4">
             <div className={`px-4 py-2 rounded-full text-sm font-bold ${
@@ -48,7 +61,7 @@ export default async function DashboardPage() {
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-12">
           <div className="lg:col-span-2 space-y-8">
-            <PresentationForm userId={session.user.id} canGenerate={isPremium} />
+            <PresentationForm userId={user.id} canGenerate={isPremium} />
 
             <div className="space-y-4">
               <h3 className="text-xl font-bold">Менин презентацияларым</h3>

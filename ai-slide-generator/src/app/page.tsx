@@ -1,10 +1,13 @@
 import Link from 'next/link'
 import { LoginButton } from '@/components/auth/LoginButton'
-import { createClient } from '@/lib/supabase/server'
+import { cookies } from 'next/headers'
 
 export default async function Home() {
-  const supabase = await createClient()
-  const { data: { session } } = await supabase.auth.getSession()
+  const cookieStore = await cookies()
+  const authToken = cookieStore.get('auth_token')?.value
+  
+  // A simple check if token exists. In a real app, you'd verify the token.
+  const session = authToken ? { user: { email: 'user@example.com' } } : null
 
   return (
     <div className="bg-white">

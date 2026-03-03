@@ -2,27 +2,44 @@
 
 import Link from 'next/link'
 import { LoginButton } from '@/components/auth/LoginButton'
-import { supabase } from '@/lib/supabase/client'
 import { useEffect, useState } from 'react'
-import type { Session } from '@supabase/supabase-js'
+import { decodeToken } from '@/lib/auth/auth-helpers'
 
 export function Navbar() {
-  const [session, setSession] = useState<Session | null>(null)
+  const [user, setUser] = useState<{ email: string; name: string } | null>(null)
+  const [isLoading, setIsLoading] = useState(true)
 
   useEffect(() => {
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      setSession(session)
-    })
+    const checkAuth = () => {
+      const cookies = document.cookie.split('; ')
+      const authToken = cookies.find(row => row.startsWith('auth_token='))?.split('=')[1]
 
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-      setSession(session)
-    })
+      if (authToken) {
+        const payload = decodeToken(authToken)
+        if (payload) {
+          setUser({
+            email: payload.email,
+            name: payload.name || payload.email.split('@')[0]
+          })
+        } else {
+          setUser(null)
+        }
+      } else {
+        setUser(null)
+      }
+      setIsLoading(false)
+    }
 
-    return () => subscription.unsubscribe()
+    checkAuth()
+    
+    // Listen for cookie changes or storage events if needed
+    // For now, simple check on mount
   }, [])
 
-  const handleSignOut = async () => {
-    await supabase.auth.signOut()
+  const handleSignOut = () => {
+    document.cookie = 'auth_token=; path=/; expires=Thu, 01 Jan 1970 00:00:01 GMT;'
+    setUser(null)
+    window.location.href = '/'
   }
 
   return (
@@ -35,23 +52,25 @@ export function Navbar() {
         </Link>
 
         <div className="flex items-center gap-4">
-          {session ? (
-            <>
-              <Link href="/dashboard" className="text-sm font-medium text-gray-600 hover:text-blue-600">
-                Башкы бет
-              </Link>
-              <button
-                onClick={handleSignOut}
-                className="text-sm font-medium text-gray-500 hover:text-red-500 transition-colors"
-              >
-                Чыгуу
-              </button>
-              <div className="w-8 h-8 rounded-full bg-blue-100 border border-blue-200 flex items-center justify-center text-blue-700 text-xs font-bold">
-                 {session.user.email?.[0].toUpperCase()}
-              </div>
-            </>
-          ) : (
-            <LoginButton />
+          {!isLoading && (
+            user ? (
+              <>
+                <Link href="/dashboard" className="text-sm font-medium text-gray-600 hover:text-blue-600">
+                  Башкы бет
+                </Link>
+                <button
+                  onClick={handleSignOut}
+                  className="text-sm font-medium text-gray-500 hover:text-red-500 transition-colors"
+                >
+                  Чыгуу
+                </button>
+                <div className="w-8 h-8 rounded-full bg-blue-100 border border-blue-200 flex items-center justify-center text-blue-700 text-xs font-bold">
+                  {user.name?.[0].toUpperCase() || user.email?.[0].toUpperCase()}
+                </div>
+              </>
+            ) : (
+              <LoginButton />
+            )
           )}
         </div>
       </div>
