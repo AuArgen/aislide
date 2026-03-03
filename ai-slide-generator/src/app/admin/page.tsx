@@ -1,0 +1,52 @@
+import { redirect } from 'next/navigation'
+import { createServerComponentClient } from '@supabase/auth-helpers-nextjs'
+import { cookies } from 'next/headers'
+import type { Database } from '@/types/database'
+
+export default async function AdminPage() {
+  const supabase = createServerComponentClient<Database>({ cookies })
+  const { data: { session } } = await supabase.auth.getSession()
+
+  if (!session) {
+    redirect('/')
+  }
+
+  const { data: user } = await supabase
+    .from('users')
+    .select('role')
+    .eq('google_id', session.user.id)
+    .single()
+
+  if (user?.role !== 'admin') {
+    redirect('/dashboard')
+  }
+
+  return (
+    <div className="p-8">
+      <h1 className="text-2xl font-bold mb-6">Админ Панель</h1>
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-8">
+        <div className="bg-white p-4 border border-gray-200 rounded-lg">
+          <p className="text-gray-500 text-sm">Бардык колдонуучулар</p>
+          <p className="text-2xl font-bold italic">-</p>
+        </div>
+        <div className="bg-white p-4 border border-gray-200 rounded-lg">
+          <p className="text-gray-500 text-sm">Төлөм күткөндөр</p>
+          <p className="text-2xl font-bold italic">-</p>
+        </div>
+        <div className="bg-white p-4 border border-gray-200 rounded-lg">
+          <p className="text-gray-500 text-sm">Активдүү жазылуулар</p>
+          <p className="text-2xl font-bold italic">-</p>
+        </div>
+        <div className="bg-white p-4 border border-gray-200 rounded-lg">
+          <p className="text-gray-500 text-sm">Gemini Token Status</p>
+          <p className="text-2xl font-bold text-green-600">Active</p>
+        </div>
+      </div>
+      
+      <div className="bg-white border border-gray-200 rounded-lg p-6">
+        <h2 className="font-semibold mb-4">Настройкалар</h2>
+        <p className="text-sm text-gray-500">Бул жерден системалык параметрлерди өзгөртө аласыз.</p>
+      </div>
+    </div>
+  )
+}
