@@ -70,20 +70,25 @@ export async function checkExternalRole(googleId: string): Promise<{ role: UserR
  */
 export function decodeToken(token: string): any {
   try {
-    const base64Url = token.split('.')[1]
+    const parts = token.split('.')
+    if (parts.length < 2) return null
+    
+    const base64Url = parts[1]
     const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/')
     
-    // In server-side (Node.js), use Buffer. In client-side (Browser), use atob.
+    // In server-side (Node.js), use Buffer if available. 
+    // In Edge Runtime or Browser, use atob and handle UTF-8.
     let jsonPayload: string
-    if (typeof window === 'undefined') {
+    
+    if (typeof Buffer !== 'undefined') {
       jsonPayload = Buffer.from(base64, 'base64').toString('utf-8')
     } else {
-      jsonPayload = decodeURIComponent(
-        atob(base64)
-          .split('')
-          .map((c) => '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2))
-          .join('')
-      )
+      const binaryString = atob(base64)
+      const bytes = new Uint8Array(binaryString.length)
+      for (let i = 0; i < binaryString.length; i++) {
+        bytes[i] = binaryString.charCodeAt(i)
+      }
+      jsonPayload = new TextDecoder().decode(bytes)
     }
     
     return JSON.parse(jsonPayload)
