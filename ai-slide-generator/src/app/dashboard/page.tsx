@@ -31,8 +31,10 @@ export default async function DashboardPage() {
   const subscription = await getUserSubscription(user.id)
   const presentations = await getUserPresentations(user.id)
 
-  const isPremium = subscription?.status === 'active'
-  const isPending = subscription?.status === 'pending'
+  const isAdmin = user.role === 'admin'
+  const isTeacher = user.role === 'teacher'
+  const isPremium = (subscription as any)?.status === 'active' || isAdmin || isTeacher
+  const isPending = (subscription as any)?.status === 'pending'
 
   return (
     <div className="bg-white min-h-screen">
@@ -43,17 +45,25 @@ export default async function DashboardPage() {
             <p className="text-gray-500">Кош келиңиз, {fullName}</p>
           </div>
           <div className="flex items-center gap-4">
-            <div className={`px-4 py-2 rounded-full text-sm font-bold ${
+            <div className={`px-4 py-2 rounded-full text-sm font-bold ${isAdmin ? 'bg-purple-50 text-purple-600' :
               isPremium ? 'bg-green-50 text-green-600' : 'bg-blue-50 text-blue-600'
-            }`}>
-              Статус: {isPremium ? 'Premium' : isPending ? 'Күтүүдө...' : 'Free'}
+              }`}>
+              Статус: {isAdmin ? 'Администратор' : isPremium ? 'Premium' : isPending ? 'Күтүүдө...' : 'Free'}
             </div>
-            {!isPremium && !isPending && (
+            {!isAdmin && !isPremium && !isPending && (
               <Link
                 href="/dashboard/upgrade"
                 className="px-6 py-2 bg-blue-600 text-white rounded-xl text-sm font-bold hover:bg-blue-700 transition-all"
               >
                 Тарифти көтөрүү
+              </Link>
+            )}
+            {isAdmin && (
+              <Link
+                href="/admin"
+                className="px-6 py-2 bg-purple-600 text-white rounded-xl text-sm font-bold hover:bg-purple-700 transition-all"
+              >
+                Админ панель
               </Link>
             )}
           </div>
@@ -71,7 +81,7 @@ export default async function DashboardPage() {
                 </div>
               ) : (
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  {presentations.map((p) => (
+                  {(presentations as any[]).map((p: any) => (
                     <Link
                       key={p.id}
                       href={`/editor/${p.id}`}
@@ -108,7 +118,7 @@ export default async function DashboardPage() {
             <div className="p-6 bg-white border border-gray-100 rounded-3xl shadow-sm">
               <h3 className="text-lg font-bold mb-4">Жардам</h3>
               <p className="text-sm text-gray-500 leading-relaxed mb-4">
-                Презентация түзүү үчүн темаңызды жазып, AI баскычын басыңыз. 
+                Презентация түзүү үчүн темаңызды жазып, AI баскычын басыңыз.
                 Даяр болгон слайддарды редактордон өзгөртө аласыз.
               </p>
               <Link href="#" className="text-sm text-blue-600 font-bold hover:underline">

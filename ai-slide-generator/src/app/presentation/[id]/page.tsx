@@ -1,20 +1,21 @@
 import { getPresentationById } from '@/lib/actions/user'
 import { notFound } from 'next/navigation'
 
-export default async function PresentationViewPage({ params }: { params: { id: string } }) {
-  const presentation = await getPresentationById(params.id)
+export default async function PresentationViewPage({ params }: { params: Promise<{ id: string }> }) {
+  const { id } = await params
+  const presentation = await getPresentationById(id)
 
   if (!presentation) {
     notFound()
   }
 
-  const slides = presentation.slides as any[]
+  const slides = (presentation as any).slides as any[]
 
   return (
     <div className="min-h-screen bg-gray-50 py-12 px-4">
       <div className="max-w-5xl mx-auto">
         <div className="mb-8 text-center">
-          <h1 className="text-3xl font-bold text-gray-900 mb-2">{presentation.title}</h1>
+          <h1 className="text-3xl font-bold text-gray-900 mb-2">{(presentation as any).title}</h1>
           <p className="text-gray-500">Автору: AI Slide Generator</p>
         </div>
 

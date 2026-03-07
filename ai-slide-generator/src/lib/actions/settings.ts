@@ -1,9 +1,10 @@
 'use server'
 
-import { supabase } from '@/lib/supabase/client'
+import { createAdminClient } from '@/lib/supabase/admin'
 import { revalidatePath } from 'next/cache'
 
 export async function getSettings() {
+  const supabase = createAdminClient()
   const { data, error } = await supabase
     .from('settings')
     .select('*')
@@ -17,10 +18,14 @@ export async function getSettings() {
 }
 
 export async function updateSetting(key: string, value: string) {
+  const supabase = createAdminClient()
   const { error } = await supabase
     .from('settings')
-    .upsert({ key, value, updated_at: new Date().toISOString() })
-    .eq('key', key)
+    .upsert({
+      key: key.toLowerCase(),
+      value,
+      updated_at: new Date().toISOString()
+    })
 
   if (error) {
     console.error('Error updating setting:', error)
@@ -32,16 +37,17 @@ export async function updateSetting(key: string, value: string) {
 }
 
 export async function getSettingByKey(key: string) {
+  const supabase = createAdminClient()
   const { data, error } = await supabase
     .from('settings')
     .select('value')
-    .eq('key', key)
-    .single()
+    .eq('key', key.toLowerCase())
+    .maybeSingle()
 
   if (error) {
     console.error(`Error fetching setting ${key}:`, error)
     return null
   }
 
-  return data.value
+  return data ? data.value : null
 }

@@ -4,10 +4,10 @@ import { generateSlides } from '@/lib/gemini'
 import { createPresentation } from '@/lib/actions/user'
 import { revalidatePath } from 'next/cache'
 
-export async function generateAndSavePresentation(userId: string, prompt: string, slideCount: number = 5) {
+export async function generateAndSavePresentation(userId: string, prompt: string, slideCount: number = 5, tone: string = 'business') {
   try {
     // 1. Generate content using Gemini
-    const presentationContent = await generateSlides(prompt, slideCount)
+    const presentationContent = await generateSlides(prompt, slideCount, tone)
 
     // 2. Save to database
     const result = await createPresentation(
@@ -17,11 +17,13 @@ export async function generateAndSavePresentation(userId: string, prompt: string
       'default'
     )
 
-    if (result.success && result.data) {
+    const successResult = result as { success: true; data: any }
+
+    if (successResult.success && successResult.data) {
       revalidatePath('/dashboard')
-      return { success: true, id: result.data.id }
+      return { success: true, id: successResult.data.id }
     } else {
-      return { success: false, error: result.error }
+      return { success: false, error: (result as any).error }
     }
   } catch (error: any) {
     console.error('Action Error:', error)

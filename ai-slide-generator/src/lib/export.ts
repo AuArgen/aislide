@@ -85,3 +85,25 @@ export async function exportToPDF(containerId: string, filename: string) {
   pdf.addImage(imgData, "PNG", 0, 0, pdfWidth, pdfHeight);
   pdf.save(`${filename.replace(/\s+/g, "_")}.pdf`);
 }
+
+/**
+ * Презентацияны сүрөт (PNG/JPG) форматына экспорттоо
+ */
+export async function exportToImage(containerId: string, filename: string, format: 'png' | 'jpeg' = 'png') {
+  const html2canvas = (await import("html2canvas")).default;
+
+  const element = document.getElementById(containerId);
+  if (!element) return;
+
+  const canvas = await html2canvas(element, {
+    scale: 3, // High quality
+    useCORS: true,
+    backgroundColor: "#ffffff",
+  });
+
+  const imgData = canvas.toDataURL(`image/${format}`, 1.0);
+  const link = document.createElement('a');
+  link.download = `${filename.replace(/\s+/g, "_")}.${format}`;
+  link.href = imgData;
+  link.click();
+}

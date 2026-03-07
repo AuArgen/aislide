@@ -1,6 +1,7 @@
 'use server'
 
 import { supabase } from '@/lib/supabase/client'
+import { getRoleLimits } from '@/lib/auth/limits'
 
 export async function getUserSubscription(userId: string) {
   const { data, error } = await supabase
@@ -33,6 +34,39 @@ export async function getUserPresentations(userId: string) {
 }
 
 export async function createPresentation(userId: string, title: string, slides: any, theme: string = 'default') {
+  // 1. Get user role
+  const { data: userData, error: userError } = await supabase
+    .from('users')
+    .select('role')
+    .eq('id', userId)
+    .single()
+
+  if (userError || !userData) {
+    console.error('Error fetching user for limit check:', userError)
+    return { success: false, error: 'User not found' }
+  }
+
+  // 2. Count existing presentations
+  const { count, error: countError } = await supabase
+    .from('presentations')
+    .select('*', { count: 'exact', head: true })
+    .eq('user_id', userId)
+
+  if (countError) {
+    console.error('Error counting presentations:', countError)
+    return { success: false, error: 'Could not verify limits' }
+  }
+
+  // 3. Check limits
+  const { maxPresentations, label } = getRoleLimits(userData.role)
+  if (count !== null && count >= maxPresentations) {
+    return {
+      success: false,
+      error: `Лимит ашылды. Сиздин тариф (${label}) боюнча максимум ${maxPresentations} презентация түзүүгө болот.`
+    }
+  }
+
+  // 4. Create presentation
   const { data, error } = await supabase
     .from('presentations')
     .insert({

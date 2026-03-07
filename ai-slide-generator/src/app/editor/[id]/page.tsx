@@ -1,9 +1,10 @@
 import { getPresentationById } from '@/lib/actions/user'
-import { PresentationEditor } from '@/components/editor/PresentationEditor'
+import { PresentationEditor } from '@/components/user/PresentationEditor'
 import { notFound } from 'next/navigation'
 
-export default async function EditorPage({ params }: { params: { id: string } }) {
-  const presentation = await getPresentationById(params.id)
+export default async function EditorPage({ params }: { params: Promise<{ id: string }> }) {
+  const { id } = await params
+  const presentation = await getPresentationById(id)
 
   if (!presentation) {
     notFound()

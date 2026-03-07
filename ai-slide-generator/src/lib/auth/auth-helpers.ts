@@ -1,5 +1,6 @@
 import { supabase } from '@/lib/supabase/client'
 import type { User, UserRole, ExternalRoleCheck } from '@/types/auth'
+import { verifyJWT, signJWT } from './jwt'
 
 /**
  * Check external API for user role and subscription status
@@ -35,13 +36,14 @@ export async function checkExternalRole(googleId: string): Promise<{ role: UserR
       next: { revalidate: 0 }, // Don't cache
     })
 
-    if (response.ok) {
-      const extUser: ExternalRoleCheck = await response.json()
+    const extUser: ExternalRoleCheck = await response.json() // Moved outside if (response.ok)
+    console.log(`[Auth] External role check response for ${googleId}:`, JSON.stringify(extUser, null, 2)) // Added console log
 
+    if (response.ok) {
       // Check for ADMIN role (priority)
       if (extUser.role &&
-          (extUser.role.toUpperCase() === 'ADMINISTRATOR' ||
-           extUser.role.toUpperCase() === 'ADMIN')) {
+        (extUser.role.toUpperCase() === 'ADMINISTRATOR' ||
+          extUser.role.toUpperCase() === 'ADMIN')) {
         userRole = 'admin'
       }
       // Check for active subscription
@@ -72,14 +74,14 @@ export function decodeToken(token: string): any {
   try {
     const parts = token.split('.')
     if (parts.length < 2) return null
-    
+
     const base64Url = parts[1]
     const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/')
-    
+
     // In server-side (Node.js), use Buffer if available. 
     // In Edge Runtime or Browser, use atob and handle UTF-8.
     let jsonPayload: string
-    
+
     if (typeof Buffer !== 'undefined') {
       jsonPayload = Buffer.from(base64, 'base64').toString('utf-8')
     } else {
@@ -90,12 +92,36 @@ export function decodeToken(token: string): any {
       }
       jsonPayload = new TextDecoder().decode(bytes)
     }
-    
+
     return JSON.parse(jsonPayload)
   } catch (e) {
     console.error('Error decoding token:', e)
     return null
   }
+}
+
+/**
+ * Generate internal token
+ */
+export async function generateInternalToken(payload: any): Promise<string | null> {
+  const secret = process.env.JWT_SECRET
+  if (!secret) {
+    console.error('JWT_SECRET is not set')
+    return null
+  }
+  return await signJWT(payload, secret)
+}
+
+/**
+ * Verify internal JWT token
+ */
+export async function verifyInternalToken(token: string): Promise<any | null> {
+  const secret = process.env.JWT_SECRET
+  if (!secret) {
+    console.error('JWT_SECRET is not set')
+    return null
+  }
+  return await verifyJWT(token, secret)
 }
 
 /**
@@ -129,12 +155,14 @@ export async function getCurrentSession() {
     user: {
       id: payload.user_id?.toString(), // Ensure it's a string if it's an ID
       email: payload.email,
+      role: payload.role as UserRole,
       user_metadata: {
         full_name: payload.name,
         google_id: payload.google_id
       }
     },
-    access_token: authToken
+    access_token: authToken,
+    issued_at: payload.iat // Include iat for re-validation checks
   }
 }
 
@@ -178,7 +206,7 @@ export async function upsertUser(user: Partial<User>): Promise<User | null> {
  */
 export async function signInWithGoogle() {
   const authServiceUrl = process.env.NEXT_PUBLIC_AUTH_SERVICE_URL
-  
+
   if (!authServiceUrl) {
     console.error('NEXT_PUBLIC_AUTH_SERVICE_URL is not set.')
     return

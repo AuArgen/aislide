@@ -12,6 +12,7 @@ interface PresentationFormProps {
 export function PresentationForm({ userId, canGenerate }: PresentationFormProps) {
   const [prompt, setPrompt] = useState('')
   const [slideCount, setSlideCount] = useState(5)
+  const [tone, setTone] = useState('business')
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const router = useRouter()
@@ -24,7 +25,7 @@ export function PresentationForm({ userId, canGenerate }: PresentationFormProps)
     setError(null)
 
     try {
-      const result = await generateAndSavePresentation(userId, prompt, slideCount)
+      const result = await generateAndSavePresentation(userId, prompt, slideCount, tone)
       if (result.success && result.id) {
         router.push(`/editor/${result.id}`)
       } else {
@@ -80,13 +81,28 @@ export function PresentationForm({ userId, canGenerate }: PresentationFormProps)
               disabled={isLoading}
             />
           </div>
-          <div className="flex-[2] pt-6">
+          <div className="flex-[1.5]">
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              Презентациянын стили (Тон)
+            </label>
+            <select
+              value={tone}
+              onChange={(e) => setTone(e.target.value)}
+              className="w-full px-4 py-2 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none"
+              disabled={isLoading}
+            >
+              <option value="business">Бизнес (Иштиктүү)</option>
+              <option value="academic">Академиялык (Илимий)</option>
+              <option value="creative">Креативдүү (Чыгармачыл)</option>
+              <option value="school">Мектеп (Окуучулар үчүн)</option>
+            </select>
+          </div>
+          <div className="flex-[1.5] pt-6">
             <button
               type="submit"
               disabled={isLoading || !prompt}
-              className={`w-full py-3 bg-blue-600 text-white rounded-xl font-bold transition-all ${
-                isLoading || !prompt ? 'opacity-50 cursor-not-allowed' : 'hover:bg-blue-700'
-              }`}
+              className={`w-full py-3 bg-blue-600 text-white rounded-xl font-bold transition-all ${isLoading || !prompt ? 'opacity-50 cursor-not-allowed' : 'hover:bg-blue-700'
+                }`}
             >
               {isLoading ? (
                 <span className="flex items-center justify-center gap-2">

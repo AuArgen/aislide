@@ -18,7 +18,7 @@ export default async function AdminPage() {
     .eq('google_id', googleId)
     .single()
 
-  if (user?.role !== 'admin') {
+  if ((user as any)?.role !== 'admin') {
     redirect('/dashboard')
   }
 
@@ -43,7 +43,7 @@ export default async function AdminPage() {
           <p className="text-2xl font-bold text-green-600">Active</p>
         </div>
       </div>
-      
+
       <div className="bg-white border border-gray-200 rounded-lg p-6">
         <h2 className="font-semibold mb-4">Настройкалар</h2>
         <p className="text-sm text-gray-500">Бул жерден системалык параметрлерди өзгөртө аласыз.</p>

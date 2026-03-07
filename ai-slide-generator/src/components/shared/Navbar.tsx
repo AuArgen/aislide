@@ -6,7 +6,7 @@ import { useEffect, useState } from 'react'
 import { decodeToken } from '@/lib/auth/auth-helpers'
 
 export function Navbar() {
-  const [user, setUser] = useState<{ email: string; name: string } | null>(null)
+  const [user, setUser] = useState<{ email: string; name: string; role?: string } | null>(null)
   const [isLoading, setIsLoading] = useState(true)
 
   useEffect(() => {
@@ -19,7 +19,8 @@ export function Navbar() {
         if (payload) {
           setUser({
             email: payload.email,
-            name: payload.name || payload.email.split('@')[0]
+            name: payload.name || payload.email.split('@')[0],
+            role: payload.role
           })
         } else {
           setUser(null)
@@ -31,9 +32,6 @@ export function Navbar() {
     }
 
     checkAuth()
-    
-    // Listen for cookie changes or storage events if needed
-    // For now, simple check on mount
   }, [])
 
   const handleSignOut = () => {
@@ -41,6 +39,8 @@ export function Navbar() {
     setUser(null)
     window.location.href = '/'
   }
+
+  const isAdmin = user?.role === 'admin'
 
   return (
     <nav className="border-b border-gray-100 bg-white/80 backdrop-blur-md sticky top-0 z-50">
@@ -55,6 +55,11 @@ export function Navbar() {
           {!isLoading && (
             user ? (
               <>
+                {isAdmin && (
+                  <Link href="/admin" className="text-sm font-bold text-purple-600 hover:text-purple-700">
+                    Админ панель
+                  </Link>
+                )}
                 <Link href="/dashboard" className="text-sm font-medium text-gray-600 hover:text-blue-600">
                   Башкы бет
                 </Link>
@@ -64,7 +69,8 @@ export function Navbar() {
                 >
                   Чыгуу
                 </button>
-                <div className="w-8 h-8 rounded-full bg-blue-100 border border-blue-200 flex items-center justify-center text-blue-700 text-xs font-bold">
+                <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold ${isAdmin ? 'bg-purple-100 border-purple-200 text-purple-700' : 'bg-blue-100 border-blue-200 text-blue-700'
+                  } border`}>
                   {user.name?.[0].toUpperCase() || user.email?.[0].toUpperCase()}
                 </div>
               </>
