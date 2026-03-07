@@ -1,7 +1,6 @@
 'use client'
 
 import { useState, useRef, useEffect, useCallback } from 'react'
-import { createPortal } from 'react-dom'
 import { updatePresentation } from '@/lib/actions/user'
 import { supabase } from '@/lib/supabase/client'
 import { exportToPPTX, exportToPDF, exportToImage } from '@/lib/export'
@@ -16,6 +15,10 @@ import {
   Share2, Download, Check, Strikethrough, Image, Palette
 } from 'lucide-react'
 import { presentationTemplates } from '@/lib/templates'
+import { FloatingTextToolbar } from './editor/FloatingTextToolbar'
+import { TypographyPanel } from './editor/TypographyPanel'
+import { FontDropdown } from './editor/FontDropdown'
+import { useFontManager, ALL_FONTS } from '@/lib/hooks/useFontManager'
 
 // ─── Interfaces ───────────────────────────────────────────────────────────────
 
@@ -35,6 +38,15 @@ interface SlideElement {
   fontStyle?: 'normal' | 'italic'
   textDecoration?: 'none' | 'underline'
   language?: string
+  // ── New typography fields ──
+  lineHeight?: number
+  letterSpacing?: number
+  textShadow?: string
+  textStroke?: string
+  opacity?: number
+  textColumns?: 1 | 2 | 3
+  textTransform?: 'none' | 'uppercase' | 'lowercase' | 'capitalize'
+  heightLocked?: boolean   // true once user manually resized height
 }
 
 interface Slide {
@@ -44,19 +56,11 @@ interface Slide {
   background?: string
   backgroundImage?: string
   titleColor?: string
-  style?: {
-    titleSize?: number
-    fontFamily?: string
-  }
+  style?: { titleSize?: number; fontFamily?: string }
 }
 
 interface PresentationEditorProps {
-  initialPresentation: {
-    id: string
-    title: string
-    slides: Slide[]
-    theme: string
-  }
+  initialPresentation: { id: string; title: string; slides: Slide[]; theme: string }
 }
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -72,15 +76,6 @@ const BG_PRESETS = [
   { label: 'Алтын', value: 'linear-gradient(135deg, #f6d365 0%, #fda085 100%)' },
   { label: 'Күн', value: 'linear-gradient(135deg, #fa709a 0%, #fee140 100%)' },
   { label: 'Түн', value: 'linear-gradient(135deg, #1a1a2e 0%, #16213e 100%)' },
-]
-
-const TEXT_PALETTE = ['#ffffff', '#000000', '#ef4444', '#f97316', '#eab308', '#22c55e', '#3b82f6', '#8b5cf6', '#ec4899']
-
-const FONTS = [
-  { name: 'Inter', family: 'var(--font-inter), sans-serif' },
-  { name: 'Serif', family: 'Georgia, serif' },
-  { name: 'Mono', family: 'monospace' },
-  { name: 'Outfit', family: 'Outfit, sans-serif' },
 ]
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -101,104 +96,16 @@ function buildSlideStyle(slide: Slide): React.CSSProperties {
   return base
 }
 
-// ─── Floating text selection toolbar ─────────────────────────────────────────
-
-function FloatingTextToolbar() {
-  const [pos, setPos] = useState<{ top: number; left: number } | null>(null)
-  const savedRange = useRef<Range | null>(null)
-
-  useEffect(() => {
-    const onSelChange = () => {
-      const sel = window.getSelection()
-      if (!sel || sel.isCollapsed || sel.rangeCount === 0) { setPos(null); return }
-      const node = sel.anchorNode
-      const el = node?.nodeType === Node.TEXT_NODE ? node.parentElement : node as HTMLElement
-      if (!el?.closest('[data-rich-text]')) { setPos(null); return }
-      const range = sel.getRangeAt(0)
-      const rect = range.getBoundingClientRect()
-      if (rect.width === 0) { setPos(null); return }
-      savedRange.current = range.cloneRange()
-      setPos({ top: rect.top + window.scrollY - 52, left: rect.left + window.scrollX + rect.width / 2 })
-    }
-    document.addEventListener('selectionchange', onSelChange)
-    return () => document.removeEventListener('selectionchange', onSelChange)
-  }, [])
-
-  const restoreSel = () => {
-    if (!savedRange.current) return false
-    const sel = window.getSelection()
-    if (!sel) return false
-    sel.removeAllRanges()
-    sel.addRange(savedRange.current)
-    return true
-  }
-
-  const exec = (cmd: string, value?: string) => {
-    restoreSel()
-    document.execCommand(cmd, false, value)
-  }
-
-  const applyStyle = (prop: string, value: string) => {
-    if (!restoreSel()) return
-    const sel = window.getSelection()
-    if (!sel || sel.rangeCount === 0 || sel.isCollapsed) return
-    const range = sel.getRangeAt(0)
-    const span = document.createElement('span')
-    ;(span.style as any)[prop] = value
-    try { range.surroundContents(span) }
-    catch { const frag = range.extractContents(); span.appendChild(frag); range.insertNode(span) }
-    const nr = document.createRange()
-    nr.selectNodeContents(span)
-    sel.removeAllRanges(); sel.addRange(nr)
-    savedRange.current = nr.cloneRange()
-  }
-
-  const applyFontSize = (delta: number) => {
-    if (!restoreSel()) return
-    const sel = window.getSelection()
-    if (!sel || sel.rangeCount === 0) return
-    const node = sel.anchorNode
-    const el = node?.nodeType === Node.TEXT_NODE ? node.parentElement : node as HTMLElement
-    const cur = parseFloat(window.getComputedStyle(el!).fontSize) || 24
-    applyStyle('fontSize', `${Math.max(8, Math.min(120, cur + delta))}px`)
-  }
-
-  if (!pos) return null
-
-  return createPortal(
-    <div
-      className="absolute z-[9999] bg-gray-900 rounded-xl shadow-2xl flex items-center gap-0.5 px-2 py-1.5 -translate-x-1/2 select-none"
-      style={{ top: pos.top, left: pos.left }}
-      onMouseDown={e => e.preventDefault()}
-    >
-      <button onMouseDown={e => { e.preventDefault(); exec('bold') }} className="w-7 h-7 rounded hover:bg-gray-700 flex items-center justify-center transition-colors" title="Жоон"><Bold size={13} className="text-white" /></button>
-      <button onMouseDown={e => { e.preventDefault(); exec('italic') }} className="w-7 h-7 rounded hover:bg-gray-700 flex items-center justify-center transition-colors" title="Курсив"><Italic size={13} className="text-white" /></button>
-      <button onMouseDown={e => { e.preventDefault(); exec('underline') }} className="w-7 h-7 rounded hover:bg-gray-700 flex items-center justify-center transition-colors" title="Астыңкы сызык"><Underline size={13} className="text-white" /></button>
-      <button onMouseDown={e => { e.preventDefault(); exec('strikeThrough') }} className="w-7 h-7 rounded hover:bg-gray-700 flex items-center justify-center transition-colors" title="Сызылган"><Strikethrough size={13} className="text-white" /></button>
-      <div className="w-px h-4 bg-gray-600 mx-1" />
-      <button onMouseDown={e => { e.preventDefault(); applyFontSize(-2) }} className="w-7 h-7 rounded hover:bg-gray-700 flex items-center justify-center text-white font-bold text-sm transition-colors">−</button>
-      <button onMouseDown={e => { e.preventDefault(); applyFontSize(2) }} className="w-7 h-7 rounded hover:bg-gray-700 flex items-center justify-center text-white font-bold text-sm transition-colors">+</button>
-      <div className="w-px h-4 bg-gray-600 mx-1" />
-      {TEXT_PALETTE.map(c => (
-        <button key={c} onMouseDown={e => { e.preventDefault(); exec('foreColor', c) }} className="w-4 h-4 rounded-full border border-gray-500 hover:scale-125 transition-transform shrink-0" style={{ backgroundColor: c }} title={c} />
-      ))}
-      <label className="w-5 h-5 rounded-full border-2 border-dashed border-gray-400 flex items-center justify-center cursor-pointer hover:border-white transition-colors ml-0.5 shrink-0 relative overflow-hidden" title="Башка түс">
-        <input type="color" className="opacity-0 absolute w-0 h-0" onMouseDown={restoreSel} onChange={e => exec('foreColor', e.target.value)} />
-        <span className="text-gray-400 text-[9px] font-bold">+</span>
-      </label>
-      <div className="absolute -bottom-1.5 left-1/2 -translate-x-1/2 w-3 h-3 bg-gray-900 rotate-45 rounded-sm" />
-    </div>,
-    document.body
-  )
-}
-
 // ─── Resize handle ────────────────────────────────────────────────────────────
 
-function ResizeHandle({ direction, onResize }: { direction: 'e' | 's' | 'se' | 'w'; onResize: (dx: number, dy: number) => void }) {
+function ResizeHandle({ direction, onResize }: {
+  direction: 'e' | 's' | 'se' | 'w'
+  onResize: (dx: number, dy: number) => void
+}) {
   const cls: Record<string, string> = {
-    e:  'right-[-5px] top-1/2 -translate-y-1/2 cursor-ew-resize w-3 h-8 rounded-sm',
-    w:  'left-[-5px]  top-1/2 -translate-y-1/2 cursor-ew-resize w-3 h-8 rounded-sm',
-    s:  'bottom-[-5px] left-1/2 -translate-x-1/2 cursor-ns-resize h-3 w-8 rounded-sm',
+    e: 'right-[-5px] top-1/2 -translate-y-1/2 cursor-ew-resize w-3 h-8 rounded-sm',
+    w: 'left-[-5px]  top-1/2 -translate-y-1/2 cursor-ew-resize w-3 h-8 rounded-sm',
+    s: 'bottom-[-5px] left-1/2 -translate-x-1/2 cursor-ns-resize h-3 w-8 rounded-sm',
     se: 'bottom-[-6px] right-[-6px] cursor-nwse-resize w-5 h-5 rounded-full',
   }
   return (
@@ -208,7 +115,10 @@ function ResizeHandle({ direction, onResize }: { direction: 'e' | 's' | 'se' | '
         e.stopPropagation(); e.preventDefault()
         const sx = e.clientX, sy = e.clientY
         const onMove = (ev: PointerEvent) => onResize(ev.clientX - sx, ev.clientY - sy)
-        const onUp = () => { window.removeEventListener('pointermove', onMove); window.removeEventListener('pointerup', onUp) }
+        const onUp = () => {
+          window.removeEventListener('pointermove', onMove)
+          window.removeEventListener('pointerup', onUp)
+        }
         window.addEventListener('pointermove', onMove)
         window.addEventListener('pointerup', onUp)
       }}
@@ -247,6 +157,35 @@ function ElementWrapper({
     sel?.removeAllRanges(); sel?.addRange(range)
   }, [isEditing])
 
+  // Auto-resize: expand height as content grows
+  const handleInput = (e: React.FormEvent<HTMLDivElement>) => {
+    const div = editableRef.current
+    if (div && !element.heightLocked) {
+      const scrollH = div.scrollHeight
+      const currentH = element.height ?? 80
+      if (scrollH > currentH) {
+        onUpdate({ content: e.currentTarget.innerHTML, height: scrollH + 4 })
+        return
+      }
+    }
+    onUpdate({ content: e.currentTarget.innerHTML })
+  }
+
+  // Shrink-to-fit: binary search font size so content fits in reduced dimensions
+  const shrinkToFit = useCallback((newWidth: number, newHeight: number) => {
+    const div = editableRef.current
+    if (!div) return
+    // Temporarily apply new width to test
+    div.style.width = `${newWidth}px`
+    div.style.height = `${newHeight}px`
+    let fs = element.fontSize ?? 24
+    while (div.scrollHeight > newHeight && fs > 8) {
+      fs -= 1
+      div.style.fontSize = `${fs}px`
+    }
+    onUpdate({ width: newWidth, height: newHeight, fontSize: fs, heightLocked: true })
+  }, [element.fontSize, onUpdate])
+
   const handlePointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
     if (isEditing) return
     onSelect()
@@ -265,8 +204,6 @@ function ElementWrapper({
     }
   }
 
-  const handlePointerUp = () => { dragStart.current = null }
-
   const handleDoubleClick = (e: React.MouseEvent) => {
     e.stopPropagation()
     if (element.type === 'text' && !didDrag.current) setIsEditing(true)
@@ -274,16 +211,26 @@ function ElementWrapper({
   }
 
   const textStyle: React.CSSProperties = {
-    fontSize: `${element.fontSize || 24}px`,
-    color: element.color || '#1f2937',
-    fontWeight: element.fontWeight || 'normal',
-    fontStyle: element.fontStyle || 'normal',
-    textDecoration: element.textDecoration || 'none',
-    textAlign: element.align || 'left',
-    lineHeight: 1.5,
+    fontSize: `${element.fontSize ?? 24}px`,
+    color: element.color ?? '#1f2937',
+    fontWeight: element.fontWeight ?? 'normal',
+    fontStyle: element.fontStyle ?? 'normal',
+    textDecoration: element.textDecoration ?? 'none',
+    textAlign: element.align ?? 'left',
+    lineHeight: element.lineHeight ?? 1.5,
+    letterSpacing: element.letterSpacing ? `${element.letterSpacing}px` : undefined,
+    textShadow: element.textShadow,
+    // @ts-ignore — webkit prefix
+    WebkitTextStroke: element.textStroke,
+    opacity: element.opacity ?? 1,
+    textTransform: (element.textTransform && element.textTransform !== 'none')
+      ? element.textTransform as React.CSSProperties['textTransform']
+      : undefined,
+    columnCount: element.textColumns && element.textColumns > 1 ? element.textColumns : undefined,
+    columnGap: element.textColumns && element.textColumns > 1 ? '1.5em' : undefined,
     whiteSpace: 'pre-wrap',
     wordBreak: 'break-word',
-    background: element.background || 'transparent',
+    background: element.background ?? 'transparent',
     borderRadius: element.background ? 6 : 0,
     padding: '4px',
   }
@@ -291,31 +238,59 @@ function ElementWrapper({
   return (
     <div
       data-element="true"
-      className={`absolute rounded-lg border-2 transition-colors ${
-        isSelected ? 'border-blue-500 shadow-lg z-30' : 'border-transparent hover:border-blue-300 z-10'
-      } ${isSelected && !isEditing ? 'cursor-move' : 'cursor-default'}`}
+      className={`absolute rounded-lg border-2 transition-colors ${isSelected ? 'border-blue-500 shadow-lg z-30' : 'border-transparent hover:border-blue-300 z-10'
+        } ${isSelected && !isEditing ? 'cursor-move' : 'cursor-default'}`}
       style={{ left: element.x, top: element.y, width: element.width || 'auto', height: element.height || 'auto' }}
       onPointerDown={handlePointerDown}
       onPointerMove={handlePointerMove}
-      onPointerUp={handlePointerUp}
+      onPointerUp={() => { dragStart.current = null }}
       onDoubleClick={handleDoubleClick}
     >
       {isSelected && (
-        <button onPointerDown={e => e.stopPropagation()} onClick={e => { e.stopPropagation(); onRemove() }} className="absolute -top-3 -right-3 w-6 h-6 bg-red-500 hover:bg-red-600 text-white rounded-full flex items-center justify-center z-50 shadow">
+        <button
+          onPointerDown={e => e.stopPropagation()}
+          onClick={e => { e.stopPropagation(); onRemove() }}
+          className="absolute -top-3 -right-3 w-6 h-6 bg-red-500 hover:bg-red-600 text-white rounded-full flex items-center justify-center z-50 shadow"
+        >
           <Trash size={11} />
         </button>
       )}
       {isEditing && (
-        <button onPointerDown={e => e.stopPropagation()} onClick={e => { e.stopPropagation(); setIsEditing(false) }} className="absolute -top-3 -left-3 w-6 h-6 bg-green-500 hover:bg-green-600 text-white rounded-full flex items-center justify-center z-50 shadow">
+        <button
+          onPointerDown={e => e.stopPropagation()}
+          onClick={e => { e.stopPropagation(); setIsEditing(false) }}
+          className="absolute -top-3 -left-3 w-6 h-6 bg-green-500 hover:bg-green-600 text-white rounded-full flex items-center justify-center z-50 shadow"
+        >
           <Check size={11} />
         </button>
       )}
       {isSelected && !isEditing && (
         <>
-          <ResizeHandle direction="e"  onResize={dx => onUpdate({ width: Math.max(80, (element.width || 200) + dx) })} />
-          <ResizeHandle direction="w"  onResize={dx => { const nw = Math.max(80, (element.width || 200) - dx); onUpdate({ x: element.x + (element.width || 200) - nw, width: nw }) }} />
-          <ResizeHandle direction="s"  onResize={(_, dy) => onUpdate({ height: Math.max(30, (element.height || 80) + dy) })} />
-          <ResizeHandle direction="se" onResize={(dx, dy) => onUpdate({ width: Math.max(80, (element.width || 200) + dx), height: Math.max(30, (element.height || 80) + dy) })} />
+          <ResizeHandle direction="e" onResize={dx => {
+            const nw = Math.max(80, (element.width ?? 200) + dx)
+            const nh = element.height ?? 80
+            if (element.type === 'text') shrinkToFit(nw, nh)
+            else onUpdate({ width: nw })
+          }} />
+          <ResizeHandle direction="w" onResize={dx => {
+            const nw = Math.max(80, (element.width ?? 200) - dx)
+            const nh = element.height ?? 80
+            const newX = element.x + (element.width ?? 200) - nw
+            if (element.type === 'text') { shrinkToFit(nw, nh); onUpdate({ x: newX }) }
+            else onUpdate({ x: newX, width: nw })
+          }} />
+          <ResizeHandle direction="s" onResize={(_, dy) => {
+            const nw = element.width ?? 200
+            const nh = Math.max(30, (element.height ?? 80) + dy)
+            if (element.type === 'text') shrinkToFit(nw, nh)
+            else onUpdate({ height: nh })
+          }} />
+          <ResizeHandle direction="se" onResize={(dx, dy) => {
+            const nw = Math.max(80, (element.width ?? 200) + dx)
+            const nh = Math.max(30, (element.height ?? 80) + dy)
+            if (element.type === 'text') shrinkToFit(nw, nh)
+            else onUpdate({ width: nw, height: nh })
+          }} />
         </>
       )}
 
@@ -328,14 +303,18 @@ function ElementWrapper({
               data-rich-text="true"
               contentEditable
               suppressContentEditableWarning
-              onInput={e => onUpdate({ content: e.currentTarget.innerHTML })}
+              onInput={handleInput}
               onKeyDown={e => { if (e.key === 'Escape') { e.preventDefault(); setIsEditing(false) } }}
               onPointerDown={e => e.stopPropagation()}
               className="outline-none w-full h-full min-h-[30px] break-words"
               style={{ ...textStyle, cursor: 'text' }}
             />
           ) : (
-            <div className="w-full h-full overflow-hidden" style={textStyle} dangerouslySetInnerHTML={{ __html: element.content || '<span style="opacity:0.3">Текст...</span>' }} />
+            <div
+              className="w-full h-full overflow-hidden"
+              style={textStyle}
+              dangerouslySetInnerHTML={{ __html: element.content || '<span style="opacity:0.3">Текст...</span>' }}
+            />
           )}
         </div>
       )}
@@ -347,7 +326,16 @@ function ElementWrapper({
             <BlockMath math={element.content || 'E=mc^2'} />
           </div>
           {isEditing && (
-            <textarea ref={textareaRef} value={element.content} onChange={e => onUpdate({ content: e.target.value })} onKeyDown={e => { if (e.key === 'Escape') setIsEditing(false) }} onPointerDown={e => e.stopPropagation()} placeholder="LaTeX формула..." className="mt-1 w-full bg-white border border-blue-300 rounded px-2 py-1 text-xs font-mono outline-none resize-none" rows={2} />
+            <textarea
+              ref={textareaRef}
+              value={element.content}
+              onChange={e => onUpdate({ content: e.target.value })}
+              onKeyDown={e => { if (e.key === 'Escape') setIsEditing(false) }}
+              onPointerDown={e => e.stopPropagation()}
+              placeholder="LaTeX формула..."
+              className="mt-1 w-full bg-white border border-blue-300 rounded px-2 py-1 text-xs font-mono outline-none resize-none"
+              rows={2}
+            />
           )}
         </div>
       )}
@@ -357,13 +345,31 @@ function ElementWrapper({
         <div className="min-w-[300px] rounded-xl overflow-hidden border border-gray-200 flex flex-col w-full h-full">
           <div className="bg-gray-800 px-4 py-1.5 text-[10px] text-gray-400 flex justify-between shrink-0">
             <span className="font-mono">{element.language || 'code'}</span>
-            <div className="flex gap-1"><div className="w-2 h-2 rounded-full bg-red-500/50" /><div className="w-2 h-2 rounded-full bg-yellow-500/50" /><div className="w-2 h-2 rounded-full bg-green-500/50" /></div>
+            <div className="flex gap-1">
+              <div className="w-2 h-2 rounded-full bg-red-500/50" />
+              <div className="w-2 h-2 rounded-full bg-yellow-500/50" />
+              <div className="w-2 h-2 rounded-full bg-green-500/50" />
+            </div>
           </div>
           {isEditing ? (
-            <textarea ref={textareaRef} value={element.content} onChange={e => onUpdate({ content: e.target.value })} onKeyDown={e => { if (e.key === 'Escape') setIsEditing(false) }} onPointerDown={e => e.stopPropagation()} className="flex-1 bg-[#1e1e1e] text-gray-100 font-mono text-sm p-4 outline-none resize-none" rows={6} />
+            <textarea
+              ref={textareaRef}
+              value={element.content}
+              onChange={e => onUpdate({ content: e.target.value })}
+              onKeyDown={e => { if (e.key === 'Escape') setIsEditing(false) }}
+              onPointerDown={e => e.stopPropagation()}
+              className="flex-1 bg-[#1e1e1e] text-gray-100 font-mono text-sm p-4 outline-none resize-none"
+              rows={6}
+            />
           ) : (
             <div className="flex-1 overflow-auto bg-[#1e1e1e]">
-              <SyntaxHighlighter language={element.language || 'javascript'} style={vscDarkPlus} customStyle={{ margin: 0, padding: '1rem', fontSize: 14, background: 'transparent' }}>{element.content}</SyntaxHighlighter>
+              <SyntaxHighlighter
+                language={element.language || 'javascript'}
+                style={vscDarkPlus}
+                customStyle={{ margin: 0, padding: '1rem', fontSize: 14, background: 'transparent' }}
+              >
+                {element.content}
+              </SyntaxHighlighter>
             </div>
           )}
         </div>
@@ -372,7 +378,7 @@ function ElementWrapper({
   )
 }
 
-// ─── Main editor ──────────────────────────────────────────────────────────────
+// ─── Main Editor ──────────────────────────────────────────────────────────────
 
 export function PresentationEditor({ initialPresentation }: PresentationEditorProps) {
   const [slides, setSlides] = useState<Slide[]>(() =>
@@ -394,8 +400,11 @@ export function PresentationEditor({ initialPresentation }: PresentationEditorPr
   const [isExporting, setIsExporting] = useState(false)
   const bgImageInputRef = useRef<HTMLInputElement>(null)
 
+  const { recentFonts, selectFont } = useFontManager()
+
   const currentSlide = slides[currentSlideIndex]
   const selectedElement = currentSlide?.elements?.find(e => e.id === selectedElementId) ?? null
+  const showTypographyPanel = selectedElement?.type === 'text'
 
   // Auto-save
   const handleSave = useCallback(async () => {
@@ -416,7 +425,7 @@ export function PresentationEditor({ initialPresentation }: PresentationEditorPr
     return () => { supabase.removeChannel(ch) }
   }, [initialPresentation.id, isSaving])
 
-  // Slide helpers
+  // Helpers
   const updateSlideField = (index: number, field: keyof Slide, value: any) => {
     setSlides(prev => { const s = [...prev]; s[index] = { ...s[index], [field]: value }; return s })
   }
@@ -424,7 +433,10 @@ export function PresentationEditor({ initialPresentation }: PresentationEditorPr
   const updateElement = useCallback((id: string, updates: Partial<SlideElement>) => {
     setSlides(prev => {
       const s = [...prev]
-      s[currentSlideIndex] = { ...s[currentSlideIndex], elements: s[currentSlideIndex].elements.map(e => e.id === id ? { ...e, ...updates } : e) }
+      s[currentSlideIndex] = {
+        ...s[currentSlideIndex],
+        elements: s[currentSlideIndex].elements.map(e => e.id === id ? { ...e, ...updates } : e),
+      }
       return s
     })
   }, [currentSlideIndex])
@@ -453,6 +465,8 @@ export function PresentationEditor({ initialPresentation }: PresentationEditorPr
       color: darkBg ? '#ffffff' : '#1f2937',
       align: 'left',
       language: type === 'code' ? 'javascript' : undefined,
+      lineHeight: 1.5,
+      opacity: 1,
     }
     setSlides(prev => {
       const s = [...prev]
@@ -502,18 +516,25 @@ export function PresentationEditor({ initialPresentation }: PresentationEditorPr
     setSelectedElementId(null)
   }
 
+  const handleFontChange = async (fontName: string) => {
+    const family = await selectFont(fontName)
+    updateSlideField(currentSlideIndex, 'style', { ...currentSlide?.style, fontFamily: fontName, _fontFamily: family })
+  }
+
   // ── Render ────────────────────────────────────────────────────────────────
 
   return (
     <div className="flex h-[calc(100vh-64px)] overflow-hidden bg-[#e8eaed]">
       <FloatingTextToolbar />
 
-      {/* ── Left: slide panel ──────────────────────────────────────────────── */}
+      {/* ── Left: slide panel ────────────────────────────────────────────────── */}
       <div className="w-[220px] shrink-0 bg-white border-r border-gray-200 flex flex-col shadow-sm">
         <div className="px-4 py-3 border-b border-gray-100 flex items-center justify-between">
           <h3 className="font-bold text-gray-700 text-sm">Слайддар</h3>
           <div className="flex items-center gap-2">
-            <span className={`text-[10px] px-2 py-0.5 rounded-full font-medium ${isSaving ? 'bg-blue-100 text-blue-600 animate-pulse' : 'bg-gray-100 text-gray-400'}`}>{isSaving ? 'Сакталууда...' : 'Сакталды'}</span>
+            <span className={`text-[10px] px-2 py-0.5 rounded-full font-medium ${isSaving ? 'bg-blue-100 text-blue-600 animate-pulse' : 'bg-gray-100 text-gray-400'}`}>
+              {isSaving ? 'Сакталууда...' : 'Сакталды'}
+            </span>
             <button onClick={addSlide} className="w-7 h-7 bg-blue-500 hover:bg-blue-600 text-white rounded-lg flex items-center justify-center transition-colors"><Plus size={14} /></button>
           </div>
         </div>
@@ -531,8 +552,11 @@ export function PresentationEditor({ initialPresentation }: PresentationEditorPr
         {/* Thumbnails */}
         <div className="flex-1 overflow-y-auto p-2.5 space-y-2">
           {slides.map((slide, i) => (
-            <div key={i} onClick={() => { setCurrentSlideIndex(i); setSelectedElementId(null) }}
-              className={`group relative cursor-pointer rounded-xl border-2 overflow-hidden transition-all ${currentSlideIndex === i ? 'border-blue-500 shadow-md shadow-blue-100' : 'border-gray-200 hover:border-gray-300'}`}>
+            <div
+              key={i}
+              onClick={() => { setCurrentSlideIndex(i); setSelectedElementId(null) }}
+              className={`group relative cursor-pointer rounded-xl border-2 overflow-hidden transition-all ${currentSlideIndex === i ? 'border-blue-500 shadow-md shadow-blue-100' : 'border-gray-200 hover:border-gray-300'}`}
+            >
               <div className="aspect-video p-2 flex flex-col overflow-hidden" style={buildSlideStyle(slide)}>
                 <div className="text-[6px] font-bold truncate leading-tight" style={{ color: slide.titleColor || '#1f2937' }}>{slide.title}</div>
                 <div className="flex-1 space-y-0.5 mt-1">
@@ -564,34 +588,30 @@ export function PresentationEditor({ initialPresentation }: PresentationEditorPr
         </div>
       </div>
 
-      {/* ── Center: toolbar + canvas ───────────────────────────────────────── */}
+      {/* ── Center: toolbar + canvas ─────────────────────────────────────────── */}
       <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
 
         {/* ── TOOLBAR ── */}
         <div className="h-14 bg-white border-b border-gray-200 flex items-center px-4 gap-2 shrink-0 shadow-sm overflow-x-auto">
-
           {selectedElement ? (
-            /* ── Element controls ── */
             <>
-              {/* Font family */}
-              <select className="bg-gray-50 border border-gray-200 rounded-lg px-2 py-1 text-xs font-medium outline-none focus:ring-2 focus:ring-blue-400 shrink-0"
+              {/* Font */}
+              <FontDropdown
                 value={currentSlide?.style?.fontFamily || 'Inter'}
-                onChange={e => updateSlideField(currentSlideIndex, 'style', { ...currentSlide?.style, fontFamily: e.target.value })}>
-                {FONTS.map(f => <option key={f.name} value={f.name}>{f.name}</option>)}
-              </select>
-
+                recentFonts={recentFonts}
+                onChange={handleFontChange}
+              />
               <div className="w-px h-5 bg-gray-200 shrink-0" />
 
               {/* Font size */}
               <div className="flex items-center gap-1 shrink-0">
-                <button onClick={() => updateElement(selectedElement.id, { fontSize: Math.max(8, (selectedElement.fontSize || 24) - 2) })} className="w-7 h-7 rounded hover:bg-gray-100 flex items-center justify-center font-bold text-gray-600 text-sm">−</button>
-                <span className="w-8 text-center text-xs font-bold text-gray-700">{selectedElement.fontSize || 24}</span>
-                <button onClick={() => updateElement(selectedElement.id, { fontSize: Math.min(120, (selectedElement.fontSize || 24) + 2) })} className="w-7 h-7 rounded hover:bg-gray-100 flex items-center justify-center font-bold text-gray-600 text-sm">+</button>
+                <button onClick={() => updateElement(selectedElement.id, { fontSize: Math.max(8, (selectedElement.fontSize ?? 24) - 2) })} className="w-7 h-7 rounded hover:bg-gray-100 flex items-center justify-center font-bold text-gray-600 text-sm">−</button>
+                <span className="w-8 text-center text-xs font-bold text-gray-700">{selectedElement.fontSize ?? 24}</span>
+                <button onClick={() => updateElement(selectedElement.id, { fontSize: Math.min(120, (selectedElement.fontSize ?? 24) + 2) })} className="w-7 h-7 rounded hover:bg-gray-100 flex items-center justify-center font-bold text-gray-600 text-sm">+</button>
               </div>
-
               <div className="w-px h-5 bg-gray-200 shrink-0" />
 
-              {/* B / I / U */}
+              {/* B / I / U / S */}
               <button onClick={() => updateElement(selectedElement.id, { fontWeight: selectedElement.fontWeight === 'bold' ? 'normal' : 'bold' })} className={`w-8 h-8 rounded flex items-center justify-center transition-colors ${selectedElement.fontWeight === 'bold' ? 'bg-gray-900 text-white' : 'hover:bg-gray-100 text-gray-700'}`}><Bold size={13} /></button>
               <button onClick={() => updateElement(selectedElement.id, { fontStyle: selectedElement.fontStyle === 'italic' ? 'normal' : 'italic' })} className={`w-8 h-8 rounded flex items-center justify-center transition-colors ${selectedElement.fontStyle === 'italic' ? 'bg-gray-900 text-white' : 'hover:bg-gray-100 text-gray-700'}`}><Italic size={13} /></button>
               <button onClick={() => updateElement(selectedElement.id, { textDecoration: selectedElement.textDecoration === 'underline' ? 'none' : 'underline' })} className={`w-8 h-8 rounded flex items-center justify-center transition-colors ${selectedElement.textDecoration === 'underline' ? 'bg-gray-900 text-white' : 'hover:bg-gray-100 text-gray-700'}`}><Underline size={13} /></button>
@@ -637,12 +657,11 @@ export function PresentationEditor({ initialPresentation }: PresentationEditorPr
             /* ── Slide controls (no element selected) ── */
             <>
               {/* Font */}
-              <select className="bg-gray-50 border border-gray-200 rounded-lg px-2 py-1 text-xs font-medium outline-none focus:ring-2 focus:ring-blue-400 shrink-0"
+              <FontDropdown
                 value={currentSlide?.style?.fontFamily || 'Inter'}
-                onChange={e => updateSlideField(currentSlideIndex, 'style', { ...currentSlide?.style, fontFamily: e.target.value })}>
-                {FONTS.map(f => <option key={f.name} value={f.name}>{f.name}</option>)}
-              </select>
-
+                recentFonts={recentFonts}
+                onChange={handleFontChange}
+              />
               <div className="w-px h-5 bg-gray-200 shrink-0" />
 
               {/* Title size */}
@@ -652,7 +671,6 @@ export function PresentationEditor({ initialPresentation }: PresentationEditorPr
                 <span className="w-8 text-center text-xs font-bold text-gray-700">{currentSlide?.style?.titleSize || 52}</span>
                 <button onClick={() => updateSlideField(currentSlideIndex, 'style', { ...currentSlide?.style, titleSize: Math.min(120, (currentSlide?.style?.titleSize || 52) + 4) })} className="w-7 h-7 rounded hover:bg-gray-100 flex items-center justify-center font-bold text-gray-600 text-sm">+</button>
               </div>
-
               <div className="w-px h-5 bg-gray-200 shrink-0" />
 
               {/* Title color */}
@@ -663,7 +681,6 @@ export function PresentationEditor({ initialPresentation }: PresentationEditorPr
                   <input type="color" value={currentSlide?.titleColor || '#1f2937'} onChange={e => updateSlideField(currentSlideIndex, 'titleColor', e.target.value)} className="absolute inset-0 opacity-0 cursor-pointer w-full h-full" />
                 </div>
               </label>
-
               <div className="w-px h-5 bg-gray-200 shrink-0" />
 
               {/* BG presets */}
@@ -675,27 +692,23 @@ export function PresentationEditor({ initialPresentation }: PresentationEditorPr
                     style={{ background: p.value, borderColor: currentSlide?.background === p.value ? '#3b82f6' : '#d1d5db' }}
                     title={p.label} />
                 ))}
-                <label className="w-5 h-5 rounded-full border-2 border-dashed border-gray-400 flex items-center justify-center cursor-pointer hover:border-blue-400 transition-colors shrink-0 relative overflow-hidden" title="Жеке түс">
+                <label className="w-5 h-5 rounded-full border-2 border-dashed border-gray-400 flex items-center justify-center cursor-pointer hover:border-blue-400 transition-colors shrink-0 relative overflow-hidden">
                   <input type="color" value={currentSlide?.background && !currentSlide.background.includes('gradient') ? currentSlide.background : '#ffffff'} onChange={e => updateSlideField(currentSlideIndex, 'background', e.target.value)} className="absolute inset-0 opacity-0 cursor-pointer" />
                   <span className="text-gray-400 text-[10px] font-bold">+</span>
                 </label>
               </div>
-
               <div className="w-px h-5 bg-gray-200 shrink-0" />
 
               {/* BG image */}
               <div className="flex items-center gap-1.5 shrink-0">
-                <button onClick={() => bgImageInputRef.current?.click()}
-                  className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-gray-100 hover:bg-gray-200 text-gray-700 text-[11px] font-semibold transition-colors">
+                <button onClick={() => bgImageInputRef.current?.click()} className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-gray-100 hover:bg-gray-200 text-gray-700 text-[11px] font-semibold transition-colors">
                   <Image size={12} /> Сурот
                 </button>
                 {currentSlide?.backgroundImage && (
-                  <button onClick={() => updateSlideField(currentSlideIndex, 'backgroundImage', undefined)}
-                    className="text-[10px] text-red-400 hover:text-red-600 font-bold px-1" title="Суротту өчүрүү">✕ сурот</button>
+                  <button onClick={() => updateSlideField(currentSlideIndex, 'backgroundImage', undefined)} className="text-[10px] text-red-400 hover:text-red-600 font-bold px-1">✕ сурот</button>
                 )}
                 <input ref={bgImageInputRef} type="file" accept="image/*" className="hidden" onChange={handleBgImage} />
               </div>
-
               <div className="w-px h-5 bg-gray-200 shrink-0" />
 
               {/* Add elements */}
@@ -714,7 +727,7 @@ export function PresentationEditor({ initialPresentation }: PresentationEditorPr
         <div className="flex-1 overflow-y-auto bg-[#e8eaed] flex flex-col items-center justify-center p-6">
           <div className="w-full" style={{ maxWidth: 'min(calc(100% - 48px), 1200px)' }}>
 
-            {/* Navigation row above canvas */}
+            {/* Nav row */}
             <div className="flex items-center justify-between mb-3">
               <div className="flex gap-2">
                 <button onClick={() => navSlide(-1)} disabled={currentSlideIndex === 0} className="w-8 h-8 rounded-xl bg-white border border-gray-200 flex items-center justify-center disabled:opacity-30 hover:bg-gray-50 shadow-sm transition-all"><ChevronLeft size={15} /></button>
@@ -727,11 +740,13 @@ export function PresentationEditor({ initialPresentation }: PresentationEditorPr
               </div>
             </div>
 
-            {/* Slide — strictly aspect-video, no grow */}
+            {/* Slide canvas */}
             <div
               id="slide-canvas"
               className="w-full rounded-2xl shadow-2xl overflow-hidden"
-              style={{ fontFamily: FONTS.find(f => f.name === (currentSlide?.style?.fontFamily || 'Inter'))?.family }}
+              style={{
+                fontFamily: ALL_FONTS.find(f => f.name === (currentSlide?.style?.fontFamily || 'Inter'))?.family
+              }}
             >
               <div
                 className="aspect-video relative overflow-hidden"
@@ -740,7 +755,7 @@ export function PresentationEditor({ initialPresentation }: PresentationEditorPr
                   if (!(e.target as HTMLElement).closest('[data-element]')) setSelectedElementId(null)
                 }}
               >
-                {/* Title — input (no auto-grow, no height issues) */}
+                {/* Title */}
                 <input
                   value={currentSlide?.title || ''}
                   onChange={e => updateSlideField(currentSlideIndex, 'title', e.target.value)}
@@ -772,6 +787,14 @@ export function PresentationEditor({ initialPresentation }: PresentationEditorPr
           </div>
         </div>
       </div>
+
+      {/* ── Right: Typography panel ── */}
+      {showTypographyPanel && selectedElement && (
+        <TypographyPanel
+          element={selectedElement}
+          onUpdate={updates => updateElement(selectedElement.id, updates)}
+        />
+      )}
     </div>
   )
 }
