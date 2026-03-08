@@ -90,7 +90,7 @@ function buildSlideStyle(slide: Slide | undefined): React.CSSProperties {
     if (bg.type === 'solid') {
       base.backgroundColor = bg.value
     } else if (bg.type === 'gradient') {
-      base.background = bg.value
+      base.backgroundImage = bg.value
     } else if (bg.type === 'image') {
       base.backgroundImage = `url(${bg.value})`
       base.backgroundSize = 'cover'
@@ -98,7 +98,7 @@ function buildSlideStyle(slide: Slide | undefined): React.CSSProperties {
     }
   } else if (slide.background) {
     // Legacy: plain hex or gradient CSS string
-    if (slide.background.includes('gradient')) base.background = slide.background
+    if (slide.background.includes('gradient')) base.backgroundImage = slide.background
     else base.backgroundColor = slide.background
   } else {
     base.backgroundColor = '#ffffff'
@@ -139,11 +139,6 @@ function ElementWrapper({
   const axisLockDominant = useRef<AxisLockDominant>(null)
   // Screen-pixel deltas must be divided by the CSS scale factor to get canvas coords.
   const canvasScale = useCanvasScale()
-
-  // Skip hidden elements
-  if (element.visible === false) return null
-  // Skip group containers — they are managed by canvas-level code
-  if (isGroup(element)) return null
 
   useEffect(() => { if (!isSelected) setIsEditing(false) }, [isSelected])
 
@@ -265,6 +260,11 @@ function ElementWrapper({
   } : {}
 
   const rotation = element.rotation ? `rotate(${element.rotation}deg)` : undefined
+
+  // Skip hidden elements
+  if (element.visible === false) return null
+  // Skip group containers — they are managed by canvas-level code
+  if (isGroup(element)) return null
 
   return (
     <div
@@ -436,11 +436,9 @@ export function PresentationEditor({ initialPresentation }: PresentationEditorPr
       elements: (slide.elements || []).map(el => ({
         ...el,
         id: el.id || makeId(),
-        // Legacy presentations stored coordinates as 0-100% of slide size;
-        // detect them (≤ 100) and scale up to the 1920×1080 canvas space.
-        x: typeof el.x === 'number' && el.x <= 100 ? el.x * 19.2 : (el.x || 0),
-        y: typeof el.y === 'number' && el.y <= 100 ? el.y * 10.8 : (el.y || 0),
-        width: typeof el.width === 'number' && el.width <= 100 ? el.width * 19.2 : (el.width || 760),
+        x: el.x || 0,
+        y: el.y || 0,
+        width: el.width || 760,
       }))
     }))
   }
@@ -489,8 +487,8 @@ function PresentationEditorInner({
     } else {
       useSlidesStore.setState({ slides: updater })
     }
-  // No dependency on `slides` — we read from the store directly.
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // No dependency on `slides` — we read from the store directly.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   // isSaving replaced by useAutoSave — keep a ref so the realtime handler can
@@ -502,7 +500,7 @@ function PresentationEditorInner({
 
   // ── Fit-to-screen scale ───────────────────────────────────────────────────
   const canvasAreaRef = useRef<HTMLDivElement>(null)
-  const [canvasScale, setCanvasScale] = useState(0.7)
+  const [canvasScale, setCanvasScale] = useState(0.6)
 
   // ── Editor Store ─────────────────────────────────────────────────────────────────
   const {
@@ -594,7 +592,7 @@ function PresentationEditorInner({
         })
       .subscribe()
     return () => { supabase.removeChannel(ch) }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [initialPresentation.id])
 
   // ── Helpers ────────────────────────────────────────────────────────────────
@@ -630,7 +628,7 @@ function PresentationEditorInner({
     const els = currentSlide.elements || []
     const last = els[els.length - 1]
     // Default Y stacks below the last element; cap at ~80% of canvas height
-    const newY = last ? Math.min(840, last.y + (last.height || 144) + 48) : 192
+    const newY = last ? Math.min(840, last.y + (last.height || 144) + 48) : 288
     const darkBg = currentSlide.background?.includes('gradient') || currentSlide.background === '#0f172a'
 
     let el: SlideElement
@@ -1100,7 +1098,7 @@ function PresentationEditorInner({
                   />
 
                   {/* Elements + SelectionBox share the same offset container */}
-                  <div className="absolute inset-0 top-[288px]">
+                  <div className="absolute inset-0" style={{ zIndex: 20 }}>
                     {currentSlide?.elements?.map(el => {
                       const isSelected = selectedIds.length === 1 && selectedIds[0] === el.id
                       const isMultiSelected = selectedIds.includes(el.id)

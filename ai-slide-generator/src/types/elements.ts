@@ -6,10 +6,10 @@
 // ─── Base fields shared by every element ───────────────────────────────────────
 export interface BaseElement {
   id: string
-  x: number       // px from slide left
-  y: number       // px from slide top
-  width?: number  // px
-  height?: number // px
+  x: number       // Absolute pixels (px) from slide left on a 1920x1080 canvas
+  y: number       // Absolute pixels (px) from slide top on a 1920x1080 canvas
+  width?: number  // Absolute pixels (px)
+  height?: number // Absolute pixels (px)
   rotation?: number  // degrees
   opacity?: number   // 0–1
   locked?: boolean

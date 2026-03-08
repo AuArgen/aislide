@@ -3,6 +3,52 @@
 import { supabase } from '@/lib/supabase/client'
 import { getRoleLimits } from '@/lib/auth/limits'
 
+/**
+ * Normalizes legacy percentage-based (0-100) slide element coordinates 
+ * to absolute pixels on a 1920x1080 grid.
+ */
+function normalizePresentationData(pres: any) {
+  if (!pres || !Array.isArray(pres.slides)) return pres;
+  
+  // 1. Detect if this is a legacy percentage-based presentation
+  // If ANY coordinate or dimension in ANY element across ALL slides is > 100,
+  // we safely assume it is ALREADY using absolute pixels.
+  let isLegacy = true;
+  for (const slide of pres.slides) {
+    if (!Array.isArray(slide.elements)) continue;
+    for (const el of slide.elements) {
+      if ((el.x !== undefined && el.x > 100) ||
+          (el.y !== undefined && el.y > 100) ||
+          (el.width !== undefined && el.width > 100) ||
+          (el.height !== undefined && el.height > 100)) {
+        isLegacy = false;
+        break;
+      }
+    }
+    if (!isLegacy) break;
+  }
+
+  if (!isLegacy) return pres;
+
+  // 2. Migrate legacy percentages to 1920x1080 absolute pixels
+  const normalizedSlides = pres.slides.map((slide: any) => {
+    if (!Array.isArray(slide.elements)) return slide;
+    return {
+      ...slide,
+      elements: slide.elements.map((el: any) => {
+        const newEl = { ...el };
+        if (typeof newEl.x === 'number') newEl.x = Math.round((newEl.x / 100) * 1920);
+        if (typeof newEl.y === 'number') newEl.y = Math.round((newEl.y / 100) * 1080);
+        if (typeof newEl.width === 'number') newEl.width = Math.round((newEl.width / 100) * 1920);
+        if (typeof newEl.height === 'number') newEl.height = Math.round((newEl.height / 100) * 1080);
+        return newEl;
+      })
+    };
+  });
+
+  return { ...pres, slides: normalizedSlides };
+}
+
 export async function getUserSubscription(userId: string) {
   const { data, error } = await supabase
     .from('subscriptions')
@@ -30,7 +76,7 @@ export async function getUserPresentations(userId: string) {
     return []
   }
 
-  return data
+  return data.map(normalizePresentationData)
 }
 
 export async function createPresentation(userId: string, title: string, slides: any, theme: string = 'default') {
@@ -98,7 +144,7 @@ export async function getPresentationById(id: string) {
     return null
   }
 
-  return data
+  return normalizePresentationData(data)
 }
 
 export async function updatePresentation(id: string, updates: any) {

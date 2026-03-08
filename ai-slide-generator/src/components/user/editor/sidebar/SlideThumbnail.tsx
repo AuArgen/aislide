@@ -7,7 +7,7 @@ import { isText, isShape } from '@/types/elements'
 function buildSlideStyle(slide: Slide): React.CSSProperties {
   const base: React.CSSProperties = {}
   if (slide.background) {
-    if (slide.background.includes('gradient')) base.background = slide.background
+    if (slide.background.includes('gradient')) base.backgroundImage = slide.background
     else base.backgroundColor = slide.background
   } else {
     base.backgroundColor = '#ffffff'
