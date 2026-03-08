@@ -6,7 +6,7 @@
 'use client'
 
 import { create } from 'zustand'
-import type { Slide, SlideLayoutType } from '@/types/elements'
+import type { Slide, SlideLayoutType, SlideBackground } from '@/types/elements'
 import { makeId } from '@/types/elements'
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -23,6 +23,7 @@ export function makeBlankSlide(
     id,
     title: layoutType === 'title' ? 'Аталышты жазыңыз' : 'Жаңы слайд',
     elements: [],
+    bg: { type: 'solid', value: '#ffffff' },
     background: '#ffffff',
     titleColor: '#1f2937',
     layoutType,
@@ -84,6 +85,52 @@ export function makeBlankSlide(
       } as import('@/types/elements').TextElement,
     ]
   }
+  if (layoutType === 'image-text') {
+    base.elements = [
+      {
+        id: makeId(), type: 'image',
+        src: '',
+        x: 40, y: 80, width: 720, height: 460,
+        maskShape: 'none', maskImageScale: 1,
+        filters: { brightness: 100, contrast: 100, saturation: 100, blur: 0 },
+        objectFit: 'cover',
+      } as import('@/types/elements').ImageElement,
+      {
+        id: makeId(), type: 'text',
+        content: 'Аталыш',
+        x: 800, y: 80, width: 700, height: 80,
+        fontSize: 40, color: '#1f2937',
+        align: 'left', fontWeight: 'bold', lineHeight: 1.2, opacity: 1,
+      } as import('@/types/elements').TextElement,
+      {
+        id: makeId(), type: 'text',
+        content: 'Мазмунду бул жерге жазыңыз...',
+        x: 800, y: 190, width: 700, height: 300,
+        fontSize: 22, color: '#374151',
+        align: 'left', lineHeight: 1.6, opacity: 1,
+      } as import('@/types/elements').TextElement,
+    ]
+  }
+  if (layoutType === 'section-header') {
+    base.bg = { type: 'gradient', value: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)' }
+    base.background = 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)'
+    base.elements = [
+      {
+        id: makeId(), type: 'text',
+        content: 'Бөлүм аталышы',
+        x: 40, y: 160, width: 1840, height: 120,
+        fontSize: 80, color: '#ffffff',
+        align: 'center', fontWeight: 'bold', lineHeight: 1.1, opacity: 1,
+      } as import('@/types/elements').TextElement,
+      {
+        id: makeId(), type: 'text',
+        content: 'Кыска сүрөттөмө же подзаголовок',
+        x: 40, y: 310, width: 1840, height: 60,
+        fontSize: 32, color: 'rgba(255,255,255,0.8)',
+        align: 'center', lineHeight: 1.4, opacity: 1,
+      } as import('@/types/elements').TextElement,
+    ]
+  }
 
   return { ...base, ...overrides }
 }
@@ -106,7 +153,7 @@ export interface SlidesState {
   // ── Initialisation ─────────────────────────────────────────────────────────
   initSlides(slides: Slide[]): void
 
-  // ── Navigation ─────────────────────────────────────────────────────────────
+  // ── Navigation ────────────────────────────────────────────────────────────
   setActiveSlide(id: string): void
 
   // ── CRUD ───────────────────────────────────────────────────────────────────
@@ -119,6 +166,12 @@ export interface SlidesState {
   updateSlide(id: string, partial: Partial<Slide>): void
   toggleHideSlide(id: string): void
   updateSpeakerNotes(id: string, notes: string): void
+
+  /** Update the structured background of a single slide */
+  setSlideBackground(id: string, bg: SlideBackground): void
+
+  /** Overwrite the background of EVERY slide with the given descriptor */
+  applyBackgroundToAll(bg: SlideBackground): void
 
   // ── Undo / Redo ─────────────────────────────────────────────────────────────
   undo(): void
@@ -239,6 +292,33 @@ export const useSlidesStore = create<SlidesState>((set, get) => {
         slides: s.slides.map(sl =>
           sl.id === id ? { ...sl, speakerNotes: notes } : sl,
         ),
+      }))
+    },
+
+    // ── Background ───────────────────────────────────────────────────────────
+    setSlideBackground(id, bg) {
+      const newHistory = snapshot()
+      set(s => ({
+        slides: s.slides.map(sl =>
+          sl.id === id
+            ? { ...sl, bg, background: bg.type !== 'image' ? bg.value : sl.background }
+            : sl
+        ),
+        history: newHistory,
+        future: [],
+      }))
+    },
+
+    applyBackgroundToAll(bg) {
+      const newHistory = snapshot()
+      set(s => ({
+        slides: s.slides.map(sl => ({
+          ...sl,
+          bg,
+          background: bg.type !== 'image' ? bg.value : sl.background,
+        })),
+        history: newHistory,
+        future: [],
       }))
     },
 

@@ -162,9 +162,22 @@ export const isIcon    = (el: SlideElement): el is IconElement    => el.type ===
 export const isVideo   = (el: SlideElement): el is VideoElement   => el.type === 'video'
 export const isGroup   = (el: SlideElement): el is GroupElement   => el.type === 'group'
 
+// ─── Slide Background ────────────────────────────────────────────────────────
+
+/** Rich background descriptor for a single slide. */
+export interface SlideBackground {
+  type: 'solid' | 'gradient' | 'image'
+  /** hex string (solid), CSS gradient string (gradient), or image URL (image) */
+  value: string
+  /** Overlay color drawn on top of image backgrounds for readability */
+  overlayColor?: string   // default '#000000'
+  /** 0 = fully transparent, 1 = fully opaque */
+  overlayOpacity?: number // default 0
+}
+
 // ─── Slide ────────────────────────────────────────────────────────────────────
 
-export type SlideLayoutType = 'blank' | 'title' | 'title-body' | 'two-column'
+export type SlideLayoutType = 'blank' | 'title' | 'title-body' | 'two-column' | 'image-text' | 'section-header'
 
 export interface Slide {
   /** Stable UUID — assigned to every slide on creation/migration */
@@ -172,6 +185,9 @@ export interface Slide {
   title: string
   elements: SlideElement[]
   image?: string
+  /** Structured background (preferred). Falls back to legacy `background` string. */
+  bg?: SlideBackground
+  /** @deprecated Use `bg` instead. Kept for backward-compat with existing DB rows. */
   background?: string
   backgroundImage?: string
   titleColor?: string

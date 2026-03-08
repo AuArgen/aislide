@@ -12,9 +12,11 @@ import {
   Trash, Code, Sigma, Type,
   Plus, AlignLeft, AlignCenter, AlignRight,
   Bold, Italic, Underline, ChevronLeft, ChevronRight,
-  Check, Image, Shapes, Star, Video,
+  Check, Image, Shapes, Star, Video, Layers, Palette,
 } from 'lucide-react'
 import { FloatingTextToolbar } from './editor/FloatingTextToolbar'
+import { useAutoSave } from '@/lib/hooks/useAutoSave'
+import { SyncStatusBadge } from './editor/SyncStatusBadge'
 import { TypographyPanel } from './editor/TypographyPanel'
 import { FontDropdown } from './editor/FontDropdown'
 import { useFontManager, ALL_FONTS } from '@/lib/hooks/useFontManager'
@@ -35,6 +37,9 @@ import { SnapGuides } from './editor/canvas/SnapGuides'
 import { MarqueeBox } from './editor/canvas/MarqueeBox'
 import { LayersPanel } from './editor/panels/LayersPanel'
 import { AlignmentToolbar } from './editor/panels/AlignmentToolbar'
+import { BackgroundPanel } from './editor/panels/BackgroundPanel'
+import { ThemePanel } from './editor/panels/ThemePanel'
+import { LayoutPicker } from './editor/panels/LayoutPicker'
 import { computeSnap } from '@/lib/editor/snapEngine'
 import { clientToCanvas, normalizeMarquee, getElementsInMarquee } from '@/lib/editor/marqueeSelection'
 import { axisLock } from '@/lib/editor/transformUtils'
@@ -44,6 +49,7 @@ import { CanvasScaleContext, useCanvasScale } from './editor/canvas/canvasScaleC
 
 // ── Slide Management Engine ───────────────────────────────────────────────────
 import { useSlidesStore } from '@/store/slidesStore'
+import { useThemeStore } from '@/store/themeStore'
 import { SlideSidebarPanel } from './editor/sidebar/SlideSidebarPanel'
 import { SpeakerNotesPanel } from './editor/panels/SpeakerNotesPanel'
 
@@ -77,17 +83,34 @@ const BG_PRESETS = [
 function buildSlideStyle(slide: Slide | undefined): React.CSSProperties {
   if (!slide) return { backgroundColor: '#ffffff' }
   const base: React.CSSProperties = {}
-  if (slide.background) {
+
+  // Prefer the rich `bg` descriptor (new schema)
+  const bg = slide.bg
+  if (bg) {
+    if (bg.type === 'solid') {
+      base.backgroundColor = bg.value
+    } else if (bg.type === 'gradient') {
+      base.background = bg.value
+    } else if (bg.type === 'image') {
+      base.backgroundImage = `url(${bg.value})`
+      base.backgroundSize = 'cover'
+      base.backgroundPosition = 'center'
+    }
+  } else if (slide.background) {
+    // Legacy: plain hex or gradient CSS string
     if (slide.background.includes('gradient')) base.background = slide.background
     else base.backgroundColor = slide.background
   } else {
     base.backgroundColor = '#ffffff'
   }
-  if (slide.backgroundImage) {
+
+  // Legacy backgroundImage field still honoured
+  if (!bg && slide.backgroundImage) {
     base.backgroundImage = `url(${slide.backgroundImage})`
     base.backgroundSize = 'cover'
     base.backgroundPosition = 'center'
   }
+
   return base
 }
 
@@ -401,7 +424,7 @@ function ElementWrapper({
 // ─── Main Editor ──────────────────────────────────────────────────────────────
 
 interface PresentationEditorProps {
-  initialPresentation: { id: string; title: string; slides: Slide[]; theme: string }
+  initialPresentation: { id: string; title: string; slides: Slide[]; theme: string; updated_at?: string }
 }
 
 /** Thin shell — seeds the store synchronously then mounts the real editor */
@@ -457,21 +480,29 @@ function PresentationEditorInner({
   // Derive current slide index from activeSlideId
   const currentSlideIndex = Math.max(0, slides.findIndex(s => s.id === activeSlideId))
 
-  // Shim: keep a local setSlides that also syncs into the store
+  // Shim: keep a local setSlides that also syncs into the store.
+  // Always reads the LATEST store state so rapid pointer-event callbacks
+  // never operate on a stale snapshot from a previous render.
   const setSlides = useCallback((updater: Slide[] | ((prev: Slide[]) => Slide[])) => {
-    const next = typeof updater === 'function' ? updater(slides) : updater
-    // Update store: replace entire array
-    useSlidesStore.setState({ slides: next })
-  }, [slides])
+    if (typeof updater === 'function') {
+      useSlidesStore.setState(state => ({ slides: updater(state.slides) }))
+    } else {
+      useSlidesStore.setState({ slides: updater })
+    }
+  // No dependency on `slides` — we read from the store directly.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
-  const [isSaving, setIsSaving] = useState(false)
+  // isSaving replaced by useAutoSave — keep a ref so the realtime handler can
+  // still gate incoming remote updates while a local save is in-flight.
+  const isSavingRef = useRef(false)
   const [isExporting, setIsExporting] = useState(false)
   const bgImageInputRef = useRef<HTMLInputElement>(null)
   const canvasRef = useRef<HTMLDivElement>(null)
 
   // ── Fit-to-screen scale ───────────────────────────────────────────────────
   const canvasAreaRef = useRef<HTMLDivElement>(null)
-  const [canvasScale, setCanvasScale] = useState(0.9)
+  const [canvasScale, setCanvasScale] = useState(0.7)
 
   // ── Editor Store ─────────────────────────────────────────────────────────────────
   const {
@@ -527,26 +558,44 @@ function PresentationEditorInner({
   const showVideoPanel = selectedElement && isVideo(selectedElement) && !isMultiSelect
   const showLayersPanel = !showTypographyPanel && !showImagePanel && !showShapePanel && !showIconPanel && !showVideoPanel
 
-  const handleSave = useCallback(async () => {
-    setIsSaving(true)
-    try { await updatePresentation(initialPresentation.id, { slides }) }
-    catch { /* silent */ }
-    finally { setIsSaving(false) }
-  }, [slides, initialPresentation.id])
+  // ── Right panel: Design tab state ───────────────────────────────────────────
+  type RightTab = 'layers' | 'design-bg' | 'design-theme' | 'design-layout'
+  const [rightTab, setRightTab] = useState<RightTab>('layers')
 
-  useEffect(() => { const t = setTimeout(handleSave, 2000); return () => clearTimeout(t) }, [slides])
+  // ── Global theme CSS vars ───────────────────────────────────────────────
+  const { activeTheme } = useThemeStore()
 
-  // Realtime
+  // ── Auto-save (debounced, with offline fallback + tab-close guard) ────────
+  const { recoverAvailable, handleRecover, handleDismissRecovery } = useAutoSave({
+    slides,
+    presentationId: initialPresentation.id,
+    serverUpdatedAt: initialPresentation.updated_at,
+    updater: async (id, data) => {
+      isSavingRef.current = true
+      try {
+        await updatePresentation(id, data)
+      } finally {
+        isSavingRef.current = false
+      }
+    },
+    onRecover: (recoveredSlides) => {
+      useSlidesStore.setState({ slides: recoveredSlides })
+    },
+  })
+
+
+  // Realtime — gate with isSavingRef to avoid stomping in-flight local saves
   useEffect(() => {
     const ch = supabase.channel(`presentation:${initialPresentation.id}`)
       .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'presentations', filter: `id=eq.${initialPresentation.id}` },
         (payload: Record<string, unknown>) => {
           const np = payload.new as { slides?: Slide[] }
-          if (np?.slides && !isSaving) setSlides(np.slides)
+          if (np?.slides && !isSavingRef.current) setSlides(np.slides)
         })
       .subscribe()
     return () => { supabase.removeChannel(ch) }
-  }, [initialPresentation.id, isSaving])
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initialPresentation.id])
 
   // ── Helpers ────────────────────────────────────────────────────────────────
 
@@ -557,18 +606,21 @@ function PresentationEditorInner({
   const updateElement = useCallback(<T extends SlideElement>(id: string, updates: Partial<T>) => {
     setSlides(prev => {
       const s = [...prev]
+      // Guard: if the slide no longer exists (e.g. stale index during rapid events) bail out.
+      if (!s[currentSlideIndex]) return s
       s[currentSlideIndex] = {
         ...s[currentSlideIndex],
-        elements: s[currentSlideIndex].elements.map(e => e.id === id ? { ...e, ...updates } : e),
+        elements: (s[currentSlideIndex].elements ?? []).map(e => e.id === id ? { ...e, ...updates } : e),
       }
       return s
     })
-  }, [currentSlideIndex])
+  }, [currentSlideIndex, setSlides])
 
   const removeElement = (id: string) => {
     setSlides(prev => {
       const s = [...prev]
-      s[currentSlideIndex] = { ...s[currentSlideIndex], elements: s[currentSlideIndex].elements.filter(e => e.id !== id) }
+      if (!s[currentSlideIndex]) return s
+      s[currentSlideIndex] = { ...s[currentSlideIndex], elements: (s[currentSlideIndex].elements ?? []).filter(e => e.id !== id) }
       return s
     })
     if (selectedIds.includes(id)) clearSelection()
@@ -759,7 +811,7 @@ function PresentationEditorInner({
 
       {/* ── Left: slide management panel ──────────────────────────────────── */}
       <SlideSidebarPanel
-        isSaving={isSaving}
+        isSaving={isSavingRef.current}
         presentationId={initialPresentation.id}
         onExport={handleExport}
         isExporting={isExporting}
@@ -771,6 +823,27 @@ function PresentationEditorInner({
 
       {/* ── Center: toolbar + canvas ─────────────────────────────────────────── */}
       <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
+
+        {/* ── Recovery banner ── */}
+        {recoverAvailable && (
+          <div className="shrink-0 flex items-center justify-between bg-amber-50 border-b border-amber-200 px-4 py-2 z-50">
+            <span className="text-xs font-semibold text-amber-800">⚠️ Сакталбаган жергиликтүү өзгөртүүлөр табылды. Калыбына келтирүүнү каалайсызбы?</span>
+            <div className="flex gap-2">
+              <button
+                onClick={handleRecover}
+                className="px-3 py-1 rounded-lg bg-amber-500 hover:bg-amber-600 text-white text-xs font-bold transition-colors"
+              >
+                Калыбына келтир
+              </button>
+              <button
+                onClick={handleDismissRecovery}
+                className="px-3 py-1 rounded-lg bg-white hover:bg-amber-100 border border-amber-300 text-amber-700 text-xs font-semibold transition-colors"
+              >
+                Жок
+              </button>
+            </div>
+          </div>
+        )}
 
         {/* ── TOOLBAR ── */}
         <div className="py-2 bg-white border-b border-gray-200 flex flex-wrap items-center px-4 gap-2 shrink-0 shadow-sm relative z-40" style={{ overflowX: 'auto', scrollbarWidth: 'none' }}>
@@ -838,6 +911,7 @@ function PresentationEditorInner({
               />
 
               <div className="ml-auto flex items-center gap-2 shrink-0">
+                <SyncStatusBadge />
                 <div className="text-[10px] text-blue-500 bg-blue-50 px-2 py-1 rounded-lg font-medium">2× = өзгөртүү</div>
                 <span className="text-xs text-gray-400">{currentSlideIndex + 1}/{slides.length}</span>
               </div>
@@ -900,7 +974,10 @@ function PresentationEditorInner({
                 <button onClick={() => setShowIconPicker(true)} className="px-2.5 py-1.5 rounded-lg bg-yellow-50 hover:bg-yellow-100 text-yellow-700 text-[11px] font-semibold flex items-center gap-1 transition-colors"><Star size={11} /> Белги</button>
                 <button onClick={() => addElement('video')} className="px-2.5 py-1.5 rounded-lg bg-red-50 hover:bg-red-100 text-red-600 text-[11px] font-semibold flex items-center gap-1 transition-colors"><Video size={11} /> Видео</button>
               </div>
-              <div className="ml-auto text-xs font-medium text-gray-400 shrink-0">{currentSlideIndex + 1} / {slides.length}</div>
+              <div className="ml-auto flex items-center gap-2 shrink-0">
+                <SyncStatusBadge />
+                <span className="text-xs font-medium text-gray-400">{currentSlideIndex + 1} / {slides.length}</span>
+              </div>
             </>
           )}
         </div>
@@ -1002,6 +1079,17 @@ function PresentationEditorInner({
                   }}
                   onPointerUp={() => setMarquee(null, null)}
                 >
+                  {/* Image overlay (for SlideBackground type='image') */}
+                  {currentSlide?.bg?.type === 'image' && (currentSlide.bg.overlayOpacity ?? 0) > 0 && (
+                    <div
+                      className="absolute inset-0 pointer-events-none"
+                      style={{
+                        backgroundColor: currentSlide.bg.overlayColor ?? '#000000',
+                        opacity: currentSlide.bg.overlayOpacity ?? 0,
+                        zIndex: 1,
+                      }}
+                    />
+                  )}
                   {/* Title */}
                   <input
                     value={currentSlide?.title || ''}
@@ -1110,12 +1198,80 @@ function PresentationEditorInner({
         />
       )}
       {showLayersPanel && (
-        <LayersPanel
-          elements={currentSlide?.elements ?? []}
-          selectedIds={selectedIds}
-          onSelectIds={selectIds}
-          onUpdateElements={updateElementsOnSlide}
-        />
+        <div
+          className="w-[240px] shrink-0 bg-white border-l border-gray-200 flex flex-col shadow-sm overflow-hidden"
+          style={{
+            '--theme-primary': activeTheme.colors.primary,
+            '--theme-secondary': activeTheme.colors.secondary,
+            '--theme-text': activeTheme.colors.text,
+            '--theme-background': activeTheme.colors.background,
+            '--theme-accent': activeTheme.colors.accent,
+          } as React.CSSProperties}
+        >
+          {/* Tab header */}
+          <div className="flex border-b border-gray-100 shrink-0">
+            <button
+              onClick={() => setRightTab('layers')}
+              className={`flex-1 flex items-center justify-center gap-1 py-2.5 text-[11px] font-semibold transition-colors
+                ${rightTab === 'layers'
+                  ? 'text-indigo-600 border-b-2 border-indigo-500 bg-indigo-50/50'
+                  : 'text-gray-500 hover:text-gray-700'}`}
+            >
+              <Layers size={12} /> Катмарлар
+            </button>
+            <button
+              onClick={() => setRightTab(t => t === 'layers' ? 'design-bg' : t)}
+              className={`flex-1 flex items-center justify-center gap-1 py-2.5 text-[11px] font-semibold transition-colors
+                ${rightTab !== 'layers'
+                  ? 'text-indigo-600 border-b-2 border-indigo-500 bg-indigo-50/50'
+                  : 'text-gray-500 hover:text-gray-700'}`}
+            >
+              <Palette size={12} /> Дизайн
+            </button>
+          </div>
+
+          {/* Layers tab */}
+          {rightTab === 'layers' && (
+            <LayersPanel
+              elements={currentSlide?.elements ?? []}
+              selectedIds={selectedIds}
+              onSelectIds={selectIds}
+              onUpdateElements={updateElementsOnSlide}
+            />
+          )}
+
+          {/* Design tabs */}
+          {rightTab !== 'layers' && (
+            <>
+              {/* Design sub-tabs */}
+              <div className="flex border-b border-gray-100 bg-gray-50 shrink-0 px-1 pt-1 gap-0.5">
+                {([
+                  { id: 'design-bg' as RightTab, label: 'Фон' },
+                  { id: 'design-theme' as RightTab, label: 'Тема' },
+                  { id: 'design-layout' as RightTab, label: 'Макет' },
+                ] as { id: RightTab; label: string }[]).map(({ id, label }) => (
+                  <button
+                    key={id}
+                    onClick={() => setRightTab(id)}
+                    className={`flex-1 text-[10px] font-bold py-1.5 rounded-t-lg transition-colors
+                      ${rightTab === id
+                        ? 'bg-white text-indigo-600'
+                        : 'text-gray-500 hover:text-gray-700'}`}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+
+              {/* Sub-tab content */}
+              <div className="flex-1 overflow-hidden">
+                {rightTab === 'design-bg' && <BackgroundPanel />}
+                {rightTab === 'design-theme' && <ThemePanel />}
+                {rightTab === 'design-layout' && <LayoutPicker />}
+              </div>
+            </>
+          )}
+        </div>
       )}
     </div>
   )
