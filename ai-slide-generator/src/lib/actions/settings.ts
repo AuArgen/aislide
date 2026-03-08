@@ -14,7 +14,7 @@ export async function getSettings() {
     return []
   }
 
-  return data
+  return data as any
 }
 
 export async function updateSetting(key: string, value: string) {
@@ -25,7 +25,7 @@ export async function updateSetting(key: string, value: string) {
       key: key.toLowerCase(),
       value,
       updated_at: new Date().toISOString()
-    })
+    } as never)
 
   if (error) {
     console.error('Error updating setting:', error)
@@ -49,5 +49,5 @@ export async function getSettingByKey(key: string) {
     return null
   }
 
-  return data ? data.value : null
+  return data ? (data as any).value : null
 }

@@ -12,7 +12,7 @@ export async function createSubscription(userId: string, planType: 'free' | 'pre
       plan_type: planType,
       status: 'pending',
       payment_proof_url: paymentProofUrl,
-    })
+    } as any)
     .select('*, users(full_name, email)')
     .single()
 
@@ -72,7 +72,7 @@ export async function updatePaymentStatus(subscriptionId: string, status: 'activ
 
   const { error } = await supabase
     .from('subscriptions')
-    .update(updateData)
+    .update(updateData as never)
     .eq('id', subscriptionId)
 
   if (error) {

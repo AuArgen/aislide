@@ -59,7 +59,7 @@ export function IconPicker({ onInsert, onClose }: IconPickerProps) {
         <div className="flex-1 overflow-y-auto p-4">
           <div className="grid grid-cols-8 gap-2">
             {filtered.map(iconName => {
-              const Icon = (LucideIcons as Record<string, React.ComponentType<{ size?: number; color?: string; strokeWidth?: number }>>)[iconName]
+              const Icon = (LucideIcons as any)[iconName] as React.ComponentType<{ size?: number; color?: string; strokeWidth?: number }>
               if (!Icon) return null
               return (
                 <button
@@ -94,9 +94,7 @@ interface IconRendererProps {
 }
 
 export function IconRenderer({ element }: IconRendererProps) {
-  const Icon = (LucideIcons as Record<string, React.ComponentType<{
-    size?: number; color?: string; strokeWidth?: number; style?: React.CSSProperties
-  }>>)[element.iconName]
+  const Icon = (LucideIcons as any as Record<string, React.ComponentType<any>>)[element.iconName]
 
   if (!Icon) {
     return (

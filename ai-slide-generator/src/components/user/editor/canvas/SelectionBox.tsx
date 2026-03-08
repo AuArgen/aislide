@@ -17,6 +17,7 @@ import { applyResize, axisLock } from '@/lib/editor/transformUtils'
 import { snapAngleIfClose } from '@/lib/editor/mathUtils'
 import type { ResizeHandle, ResizeOptions } from '@/lib/editor/transformUtils'
 import type { Rect } from '@/lib/editor/mathUtils'
+import { useCanvasScale } from './canvasScaleContext'
 
 interface SelectionBoxProps {
   /** Bounding box in canvas-local px */
@@ -64,6 +65,9 @@ export function SelectionBox({
 }: SelectionBoxProps) {
   const boxRef = useRef<HTMLDivElement>(null)
   const axisLockDominant = useRef<'x' | 'y' | null>(null)
+  // Dividing screen-pixel deltas by the canvas CSS scale converts them into
+  // 1920×1080 canvas coordinates so handles move at the correct speed.
+  const canvasScale = useCanvasScale()
 
   // ── Resize pointer handling ─────────────────────────────────────────────────
   const handleResizePointerDown = (
@@ -82,8 +86,9 @@ export function SelectionBox({
       const shiftHeld = ev.shiftKey
       const altHeld   = ev.altKey
 
-      const dx = ev.clientX - startX
-      const dy = ev.clientY - startY
+      // Convert from screen px → canvas px by dividing by the CSS scale factor.
+      const dx = (ev.clientX - startX) / canvasScale
+      const dy = (ev.clientY - startY) / canvasScale
 
       const opts: ResizeOptions = {
         lockAspect: isImage || shiftHeld,

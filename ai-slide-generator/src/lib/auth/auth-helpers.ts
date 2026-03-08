@@ -189,7 +189,7 @@ export async function getUserByGoogleId(googleId: string): Promise<User | null> 
 export async function upsertUser(user: Partial<User>): Promise<User | null> {
   const { data, error } = await supabase
     .from('users')
-    .upsert(user, { onConflict: 'google_id' })
+    .upsert(user as never, { onConflict: 'google_id' })
     .select()
     .single()
 

@@ -58,7 +58,7 @@ export async function createPresentation(userId: string, title: string, slides: 
   }
 
   // 3. Check limits
-  const { maxPresentations, label } = getRoleLimits(userData.role)
+  const { maxPresentations, label } = getRoleLimits((userData as any).role)
   if (count !== null && count >= maxPresentations) {
     return {
       success: false,
@@ -67,23 +67,23 @@ export async function createPresentation(userId: string, title: string, slides: 
   }
 
   // 4. Create presentation
-  const { data, error } = await supabase
+  const { data: pres, error: insertObjErr } = await supabase
     .from('presentations')
     .insert({
       user_id: userId,
       title,
-      slides,
+      slides: slides as any,
       theme,
-    })
-    .select()
+    } as any)
+    .select('id')
     .single()
 
-  if (error) {
-    console.error('Error creating presentation:', error)
-    return { success: false, error: error.message }
+  if (insertObjErr) {
+    console.error('Error creating presentation:', insertObjErr)
+    return { success: false, error: insertObjErr.message }
   }
 
-  return { success: true, data }
+  return { success: true, data: pres }
 }
 
 export async function getPresentationById(id: string) {
@@ -104,10 +104,7 @@ export async function getPresentationById(id: string) {
 export async function updatePresentation(id: string, updates: any) {
   const { error } = await supabase
     .from('presentations')
-    .update({
-      ...updates,
-      updated_at: new Date().toISOString(),
-    })
+    .update({ ...updates, updated_at: new Date().toISOString() } as never)
     .eq('id', id)
 
   if (error) {

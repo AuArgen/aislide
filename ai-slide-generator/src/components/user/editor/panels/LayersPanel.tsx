@@ -35,7 +35,7 @@ function layerLabel(el: SlideElement): string {
     case 'code':    return 'Код'
     case 'video':   return 'Видео'
     case 'group':   return `Группа (${(el as {childIds: string[]}).childIds.length})`
-    default:        return el.type
+    default:        return 'Элемент'
   }
 }
 

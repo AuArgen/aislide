@@ -40,6 +40,7 @@ import { clientToCanvas, normalizeMarquee, getElementsInMarquee } from '@/lib/ed
 import { axisLock } from '@/lib/editor/transformUtils'
 import type { AxisLockDominant } from '@/lib/editor/transformUtils'
 import type { Rect } from '@/lib/editor/mathUtils'
+import { CanvasScaleContext, useCanvasScale } from './editor/canvas/canvasScaleContext'
 
 // ── Slide Management Engine ───────────────────────────────────────────────────
 import { useSlidesStore } from '@/store/slidesStore'
@@ -113,6 +114,8 @@ function ElementWrapper({
   const dragStart = useRef<{ mx: number; my: number; ex: number; ey: number } | null>(null)
   const didDrag = useRef(false)
   const axisLockDominant = useRef<AxisLockDominant>(null)
+  // Screen-pixel deltas must be divided by the CSS scale factor to get canvas coords.
+  const canvasScale = useCanvasScale()
 
   // Skip hidden elements
   if (element.visible === false) return null
@@ -171,8 +174,10 @@ function ElementWrapper({
 
   const handlePointerMove = (e: React.PointerEvent) => {
     if (!dragStart.current || isEditing) return
-    let dx = e.clientX - dragStart.current.mx
-    let dy = e.clientY - dragStart.current.my
+    // Convert screen-pixel delta → canvas-coordinate delta by dividing by the
+    // CSS transform scale.  Without this, elements move 2× too fast at 0.5× zoom.
+    let dx = (e.clientX - dragStart.current.mx) / canvasScale
+    let dy = (e.clientY - dragStart.current.my) / canvasScale
 
     // Axis lock when Shift held
     if (e.shiftKey) {
@@ -241,13 +246,12 @@ function ElementWrapper({
   return (
     <div
       data-element="true"
-      className={`absolute rounded-lg border-2 transition-colors ${
-        isSelected
-          ? 'border-blue-500 shadow-lg z-30'
-          : isMultiSelected
-            ? 'border-blue-400 z-25'
-            : 'border-transparent hover:border-blue-300 z-10'
-      } ${isSelected && !isEditing && !element.locked ? 'cursor-move' : 'cursor-default'}
+      className={`absolute rounded-lg border-2 transition-colors ${isSelected
+        ? 'border-blue-500 shadow-lg z-30'
+        : isMultiSelected
+          ? 'border-blue-400 z-25'
+          : 'border-transparent hover:border-blue-300 z-10'
+        } ${isSelected && !isEditing && !element.locked ? 'cursor-move' : 'cursor-default'}
       ${element.locked ? 'cursor-not-allowed opacity-75' : ''}`}
       style={{
         left: element.x, top: element.y,
@@ -409,9 +413,11 @@ export function PresentationEditor({ initialPresentation }: PresentationEditorPr
       elements: (slide.elements || []).map(el => ({
         ...el,
         id: el.id || makeId(),
-        x: typeof el.x === 'number' && el.x <= 100 ? el.x * 8 : (el.x || 0),
-        y: typeof el.y === 'number' && el.y <= 100 ? el.y * 4.5 : (el.y || 0),
-        width: typeof el.width === 'number' && el.width <= 100 ? el.width * 8 : (el.width || 400),
+        // Legacy presentations stored coordinates as 0-100% of slide size;
+        // detect them (≤ 100) and scale up to the 1920×1080 canvas space.
+        x: typeof el.x === 'number' && el.x <= 100 ? el.x * 19.2 : (el.x || 0),
+        y: typeof el.y === 'number' && el.y <= 100 ? el.y * 10.8 : (el.y || 0),
+        width: typeof el.width === 'number' && el.width <= 100 ? el.width * 19.2 : (el.width || 760),
       }))
     }))
   }
@@ -445,7 +451,7 @@ function PresentationEditorInner({
   // Re-init when navigating to a different presentation
   useEffect(() => {
     initSlides(hydrateSlides(initialPresentation.slides))
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [initialPresentation.id])
 
   // Derive current slide index from activeSlideId
@@ -463,6 +469,10 @@ function PresentationEditorInner({
   const bgImageInputRef = useRef<HTMLInputElement>(null)
   const canvasRef = useRef<HTMLDivElement>(null)
 
+  // ── Fit-to-screen scale ───────────────────────────────────────────────────
+  const canvasAreaRef = useRef<HTMLDivElement>(null)
+  const [canvasScale, setCanvasScale] = useState(0.9)
+
   // ── Editor Store ─────────────────────────────────────────────────────────────────
   const {
     selectedIds, selectIds, toggleSelectId, clearSelection,
@@ -473,9 +483,32 @@ function PresentationEditorInner({
   const selectedElementId = selectedIds[0] ?? null
   const isMultiSelect = selectedIds.length > 1
 
-  // Canvas logical size (coordinate system for elements)
-  const CANVAS_W = 800
-  const CANVAS_H = 450
+  // Canvas fixed base resolution — always 1920×1080; CSS transform scales it to fit.
+  const CANVAS_W = 1920
+  const CANVAS_H = 1080
+
+  // ResizeObserver: recalculate CSS scale so the 1920×1080 canvas always fits.
+  // IMPORTANT: canvasAreaRef must be on the actual viewport div (the flex-1 centering
+  // container), NOT on any ancestor that includes toolbar/nav/notes bars — otherwise
+  // the measured height includes those elements and the scale is incorrect.
+  useEffect(() => {
+    const area = canvasAreaRef.current
+    if (!area) return
+    const PADDING = 40  // 20px breathing room on each side — keeps slide away from viewport edges
+    const recompute = () => {
+      const availW = area.clientWidth - PADDING
+      const availH = area.clientHeight - PADDING
+      const scaleX = availW / CANVAS_W
+      const scaleY = availH / CANVAS_H
+      // Pick the smaller scale so the entire 16:9 rectangle is always visible
+      setCanvasScale(Math.min(scaleX, scaleY))
+    }
+    recompute()
+    const ro = new ResizeObserver(recompute)
+    ro.observe(area)
+    return () => ro.disconnect()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   // ── Media overlay state ─────────────────────────────────────────────────
   const [showImageUploader, setShowImageUploader] = useState(false)
@@ -544,7 +577,8 @@ function PresentationEditorInner({
   const addElement = (type: SlideElement['type'], extraProps?: Partial<SlideElement>) => {
     const els = currentSlide.elements || []
     const last = els[els.length - 1]
-    const newY = last ? Math.min(350, last.y + (last.height || 60) + 20) : 80
+    // Default Y stacks below the last element; cap at ~80% of canvas height
+    const newY = last ? Math.min(840, last.y + (last.height || 144) + 48) : 192
     const darkBg = currentSlide.background?.includes('gradient') || currentSlide.background === '#0f172a'
 
     let el: SlideElement
@@ -553,17 +587,18 @@ function PresentationEditorInner({
         el = {
           id: makeId(), type: 'text' as const,
           content: 'Жаңы текст...',
-          x: 40, y: newY, width: 440,
-          fontSize: 24, color: darkBg ? '#ffffff' : '#1f2937',
+          // 1920×1080 coordinate space — ~10% from left, reasonable width
+          x: 96, y: newY, width: 1056,
+          fontSize: 48, color: darkBg ? '#ffffff' : '#1f2937',
           align: 'left' as const, lineHeight: 1.5, opacity: 1,
           ...(extraProps as Partial<import('@/types/elements').TextElement>),
         }
         break
       case 'formula':
-        el = { id: makeId(), type: 'formula', content: 'E=mc^2', x: 40, y: newY, width: 300, height: 80 }
+        el = { id: makeId(), type: 'formula', content: 'E=mc^2', x: 96, y: newY, width: 720, height: 192 }
         break
       case 'code':
-        el = { id: makeId(), type: 'code', content: '// код жазыңыз', x: 40, y: newY, width: 620, height: 200, language: 'javascript' }
+        el = { id: makeId(), type: 'code', content: '// код жазыңыз', x: 96, y: newY, width: 1488, height: 480, language: 'javascript' }
         break
       case 'image':
         el = defaultImageElement({ y: newY, ...(extraProps as Partial<ImageElement>) })
@@ -649,12 +684,13 @@ function PresentationEditorInner({
 
       if (e.key === 'Escape') { clearSelection(); return }
 
-      const nudge = e.shiftKey ? 10 : 1
+      // Nudge amounts scaled for 1920×1080 canvas space
+      const nudge = e.shiftKey ? 20 : 2
       let dx = 0, dy = 0
-      if (e.key === 'ArrowLeft')  { dx = -nudge; e.preventDefault() }
-      if (e.key === 'ArrowRight') { dx =  nudge; e.preventDefault() }
-      if (e.key === 'ArrowUp')    { dy = -nudge; e.preventDefault() }
-      if (e.key === 'ArrowDown')  { dy =  nudge; e.preventDefault() }
+      if (e.key === 'ArrowLeft') { dx = -nudge; e.preventDefault() }
+      if (e.key === 'ArrowRight') { dx = nudge; e.preventDefault() }
+      if (e.key === 'ArrowUp') { dy = -nudge; e.preventDefault() }
+      if (e.key === 'ArrowDown') { dy = nudge; e.preventDefault() }
 
       if (dx !== 0 || dy !== 0) {
         selectedIds.forEach(id => {
@@ -737,7 +773,7 @@ function PresentationEditorInner({
       <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
 
         {/* ── TOOLBAR ── */}
-        <div className="min-h-[56px] py-2 bg-white border-b border-gray-200 flex flex-wrap items-center px-4 gap-2 shrink-0 shadow-sm relative z-40">
+        <div className="py-2 bg-white border-b border-gray-200 flex flex-wrap items-center px-4 gap-2 shrink-0 shadow-sm relative z-40" style={{ overflowX: 'auto', scrollbarWidth: 'none' }}>
           {selectedElement ? (
             <>
               {/* Font (text elements only) */}
@@ -814,9 +850,9 @@ function PresentationEditorInner({
               {/* Title size */}
               <div className="flex items-center gap-1 shrink-0">
                 <span className="text-[10px] text-gray-400 font-bold uppercase tracking-wider">Аталыш</span>
-                <button onClick={() => updateSlideField(currentSlideIndex, 'style', { ...currentSlide?.style, titleSize: Math.max(16, (currentSlide?.style?.titleSize || 52) - 4) })} className="w-7 h-7 rounded hover:bg-gray-100 flex items-center justify-center font-bold text-gray-600 text-sm">−</button>
-                <span className="w-8 text-center text-xs font-bold text-gray-700">{currentSlide?.style?.titleSize || 52}</span>
-                <button onClick={() => updateSlideField(currentSlideIndex, 'style', { ...currentSlide?.style, titleSize: Math.min(120, (currentSlide?.style?.titleSize || 52) + 4) })} className="w-7 h-7 rounded hover:bg-gray-100 flex items-center justify-center font-bold text-gray-600 text-sm">+</button>
+                <button onClick={() => updateSlideField(currentSlideIndex, 'style', { ...currentSlide?.style, titleSize: Math.max(24, (currentSlide?.style?.titleSize || 96) - 8) })} className="w-7 h-7 rounded hover:bg-gray-100 flex items-center justify-center font-bold text-gray-600 text-sm">−</button>
+                <span className="w-10 text-center text-xs font-bold text-gray-700">{currentSlide?.style?.titleSize || 96}</span>
+                <button onClick={() => updateSlideField(currentSlideIndex, 'style', { ...currentSlide?.style, titleSize: Math.min(320, (currentSlide?.style?.titleSize || 96) + 8) })} className="w-7 h-7 rounded hover:bg-gray-100 flex items-center justify-center font-bold text-gray-600 text-sm">+</button>
               </div>
               <div className="w-px h-5 bg-gray-200 shrink-0" />
               {/* Title color */}
@@ -869,124 +905,169 @@ function PresentationEditorInner({
           )}
         </div>
 
-        {/* ── CANVAS ── */}
+        {/* ── CANVAS AREA ── */}
         <div className="flex-1 overflow-hidden bg-[#e8eaed] flex flex-col">
-          <div className="flex-1 overflow-y-auto flex flex-col items-center justify-center p-6">
-          <div className="w-full" style={{ maxWidth: 'min(calc(100% - 48px), 1200px)' }}>
-            {/* Nav row */}
-            <div className="flex items-center justify-between mb-3">
-              <div className="flex gap-2">
-                <button onClick={() => navSlide(-1)} disabled={currentSlideIndex === 0} className="w-8 h-8 rounded-xl bg-white border border-gray-200 flex items-center justify-center disabled:opacity-30 hover:bg-gray-50 shadow-sm transition-all"><ChevronLeft size={15} /></button>
-                <button onClick={() => navSlide(1)} disabled={currentSlideIndex === slides.length - 1} className="w-8 h-8 rounded-xl bg-white border border-gray-200 flex items-center justify-center disabled:opacity-30 hover:bg-gray-50 shadow-sm transition-all"><ChevronRight size={15} /></button>
-                <span className="text-xs text-gray-500 font-medium self-center ml-1">{currentSlideIndex + 1} / {slides.length}</span>
-              </div>
-              <div className="flex items-center gap-2">
-                <span className="text-[11px] text-gray-400">Слайд #{currentSlideIndex + 1}</span>
-                <button onClick={addSlide} className="px-2.5 py-1 rounded-lg bg-blue-500 hover:bg-blue-600 text-white text-[11px] font-semibold flex items-center gap-1 transition-colors"><Plus size={11} /> Слайд</button>
-              </div>
-            </div>
 
-            {/* Slide canvas */}
-            <div
-              id="slide-canvas"
-              className="w-full rounded-2xl shadow-2xl overflow-hidden"
-              style={{ fontFamily: ALL_FONTS.find(f => f.name === (currentSlide?.style?.fontFamily || 'Inter'))?.family }}
-            >
+          {/* Canvas nav bar — sits above the scaled slide */}
+          <div className="shrink-0 flex items-center justify-between px-4 py-2 z-10">
+            <div className="flex gap-2 items-center">
+              <button onClick={() => navSlide(-1)} disabled={currentSlideIndex === 0}
+                className="w-8 h-8 rounded-xl bg-white border border-gray-200 flex items-center justify-center disabled:opacity-30 hover:bg-gray-50 shadow-sm transition-all">
+                <ChevronLeft size={15} />
+              </button>
+              <button onClick={() => navSlide(1)} disabled={currentSlideIndex === slides.length - 1}
+                className="w-8 h-8 rounded-xl bg-white border border-gray-200 flex items-center justify-center disabled:opacity-30 hover:bg-gray-50 shadow-sm transition-all">
+                <ChevronRight size={15} />
+              </button>
+              <span className="text-xs text-gray-500 font-medium ml-1">{currentSlideIndex + 1} / {slides.length}</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="text-[11px] text-gray-400">Слайд #{currentSlideIndex + 1}</span>
+              <button onClick={addSlide}
+                className="px-2.5 py-1 rounded-lg bg-blue-500 hover:bg-blue-600 text-white text-[11px] font-semibold flex items-center gap-1 transition-colors">
+                <Plus size={11} /> Слайд
+              </button>
+            </div>
+          </div>
+
+          {/*
+           * ── Slide Viewport (Kimi-style) ────────────────────────────────────
+           * canvasAreaRef sits here so ResizeObserver only measures the
+           * available slide area, excluding the nav bar and notes panel.
+           *
+           * Architecture:
+           *   VIEWPORT  — overflow:hidden flex centering container (this div)
+           *   SLIDE     — the true 1920×1080 canvas, scaled via CSS transform
+           *               with transformOrigin:'center center'. The flex parent
+           *               centres it visually. The slide overflows layout-wise,
+           *               which is fine because the viewport clips it.
+           *
+           * All pointer delta math inside ElementWrapper and SelectionBox must
+           * divide by canvasScale to convert screen px → canvas px.
+           */}
+          <div
+            ref={canvasAreaRef}
+            style={{
+              flex: 1,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              overflow: 'hidden',
+              backgroundColor: '#f3f4f6',
+              position: 'relative',
+            }}
+          >
+            {/* Wrap canvas in context so ElementWrapper + SelectionBox can
+                read canvasScale without prop-drilling. */}
+            <CanvasScaleContext.Provider value={canvasScale}>
+              {/* The slide canvas — true 1920×1080, scaled from centre */}
               <div
-                ref={canvasRef}
-                className="aspect-video relative overflow-hidden"
-                style={buildSlideStyle(currentSlide)}
-                onPointerDown={e => {
-                  const target = e.target as HTMLElement
-                  if (target.closest('[data-element]')) return
-                  // Start marquee
-                  if (!canvasRef.current) return
-                  const canvasRect = canvasRef.current.getBoundingClientRect()
-                  const pos = clientToCanvas(e.clientX, e.clientY, canvasRect, CANVAS_W, CANVAS_H)
-                  setMarquee(pos, pos)
-                  clearSelection()
-                }}
-                onPointerMove={e => {
-                  if (!marqueeStart || !canvasRef.current) return
-                  const canvasRect = canvasRef.current.getBoundingClientRect()
-                  const pos = clientToCanvas(e.clientX, e.clientY, canvasRect, CANVAS_W, CANVAS_H)
-                  setMarquee(marqueeStart, pos)
-                  // Live selection update
-                  if (marqueeStart && pos) {
-                    const mRect = normalizeMarquee(marqueeStart, pos)
-                    const ids = getElementsInMarquee(mRect, currentSlide?.elements ?? [])
-                    if (ids.length > 0) selectIds(ids)
-                  }
-                }}
-                onPointerUp={() => {
-                  setMarquee(null, null)
+                id="slide-canvas"
+                style={{
+                  width: CANVAS_W,
+                  height: CANVAS_H,
+                  transform: `scale(${canvasScale})`,
+                  transformOrigin: 'center center',
+                  flexShrink: 0,
+                  position: 'relative',
+                  borderRadius: 16,
+                  boxShadow: '0 25px 60px rgba(0,0,0,0.25)',
+                  overflow: 'hidden',
+                  fontFamily: ALL_FONTS.find(f => f.name === (currentSlide?.style?.fontFamily || 'Inter'))?.family,
                 }}
               >
-                {/* Title */}
-                <input
-                  value={currentSlide?.title || ''}
-                  onChange={e => updateSlideField(currentSlideIndex, 'title', e.target.value)}
-                  placeholder="Аталышы..."
-                  className="absolute top-0 left-0 right-0 w-full bg-transparent border-none outline-none font-black px-10 pt-8"
-                  style={{ fontSize: `${currentSlide?.style?.titleSize || 52}px`, color: currentSlide?.titleColor || '#1f2937', lineHeight: 1.15, zIndex: 10 }}
-                />
+                <div
+                  ref={canvasRef}
+                  className="relative overflow-hidden"
+                  style={{ width: CANVAS_W, height: CANVAS_H, ...buildSlideStyle(currentSlide) }}
+                  onPointerDown={e => {
+                    const target = e.target as HTMLElement
+                    if (target.closest('[data-element]')) return
+                    if (!canvasRef.current) return
+                    const canvasRect = canvasRef.current.getBoundingClientRect()
+                    const pos = clientToCanvas(e.clientX, e.clientY, canvasRect, CANVAS_W, CANVAS_H)
+                    setMarquee(pos, pos)
+                    clearSelection()
+                  }}
+                  onPointerMove={e => {
+                    if (!marqueeStart || !canvasRef.current) return
+                    const canvasRect = canvasRef.current.getBoundingClientRect()
+                    const pos = clientToCanvas(e.clientX, e.clientY, canvasRect, CANVAS_W, CANVAS_H)
+                    setMarquee(marqueeStart, pos)
+                    if (marqueeStart && pos) {
+                      const mRect = normalizeMarquee(marqueeStart, pos)
+                      const ids = getElementsInMarquee(mRect, currentSlide?.elements ?? [])
+                      if (ids.length > 0) selectIds(ids)
+                    }
+                  }}
+                  onPointerUp={() => setMarquee(null, null)}
+                >
+                  {/* Title */}
+                  <input
+                    value={currentSlide?.title || ''}
+                    onChange={e => updateSlideField(currentSlideIndex, 'title', e.target.value)}
+                    placeholder="Аталышы..."
+                    className="absolute top-0 left-0 right-0 w-full bg-transparent border-none outline-none font-black px-24 pt-20"
+                    style={{ fontSize: `${currentSlide?.style?.titleSize || 96}px`, color: currentSlide?.titleColor || '#1f2937', lineHeight: 1.15, zIndex: 10 }}
+                  />
 
-                {/* Elements + SelectionBox share the same offset container */}
-                <div className="absolute inset-0 top-[120px]">
-                  {currentSlide?.elements?.map(el => {
-                    const isSelected = selectedIds.length === 1 && selectedIds[0] === el.id
-                    const isMultiSelected = selectedIds.includes(el.id)
-                    const otherRects = (currentSlide?.elements ?? [])
-                      .filter(x => x.id !== el.id && x.visible !== false)
-                      .map(x => ({ x: x.x, y: x.y, width: x.width ?? 0, height: x.height ?? 0 }))
-                    return (
-                      <ElementWrapper
-                        key={el.id}
-                        element={el}
-                        isSelected={isSelected}
-                        isMultiSelected={isMultiSelected}
-                        onSelect={(additive) => {
-                          if (additive) toggleSelectId(el.id)
-                          else selectIds([el.id])
-                        }}
-                        onUpdate={updates => updateElement(el.id, updates as Partial<typeof el>)}
-                        onRemove={() => removeElement(el.id)}
-                        otherRects={otherRects}
-                        canvasW={CANVAS_W}
-                        canvasH={CANVAS_H}
-                        onSnapGuides={setSnapGuides}
-                      />
-                    )
-                  })}
+                  {/* Elements + SelectionBox share the same offset container */}
+                  <div className="absolute inset-0 top-[288px]">
+                    {currentSlide?.elements?.map(el => {
+                      const isSelected = selectedIds.length === 1 && selectedIds[0] === el.id
+                      const isMultiSelected = selectedIds.includes(el.id)
+                      const otherRects = (currentSlide?.elements ?? [])
+                        .filter(x => x.id !== el.id && x.visible !== false)
+                        .map(x => ({ x: x.x, y: x.y, width: x.width ?? 0, height: x.height ?? 0 }))
+                      return (
+                        <ElementWrapper
+                          key={el.id}
+                          element={el}
+                          isSelected={isSelected}
+                          isMultiSelected={isMultiSelected}
+                          onSelect={(additive) => {
+                            if (additive) toggleSelectId(el.id)
+                            else selectIds([el.id])
+                          }}
+                          onUpdate={updates => updateElement(el.id, updates as Partial<typeof el>)}
+                          onRemove={() => removeElement(el.id)}
+                          otherRects={otherRects}
+                          canvasW={CANVAS_W}
+                          canvasH={CANVAS_H}
+                          onSnapGuides={setSnapGuides}
+                        />
+                      )
+                    })}
 
-                  {/* SelectionBox lives here so its coordinate origin matches the elements */}
-                  {selectedElementId && !isMultiSelect && (() => {
-                    const el = currentSlide?.elements?.find(x => x.id === selectedElementId)
-                    if (!el || el.visible === false || el.locked || isGroup(el)) return null
-                    const rect = { x: el.x, y: el.y, width: el.width ?? 200, height: el.height ?? 80 }
-                    return (
-                      <SelectionBox
-                        rect={rect}
-                        rotation={el.rotation}
-                        isImage={isImage(el)}
-                        onResize={newRect => updateElement(selectedElementId, newRect as Partial<SlideElement>)}
-                        onRotate={angle => updateElement(selectedElementId, { rotation: angle } as Partial<SlideElement>)}
-                      />
-                    )
-                  })()}
-                </div>
+                    {/* SelectionBox lives here so its coordinate origin matches elements */}
+                    {selectedElementId && !isMultiSelect && (() => {
+                      const el = currentSlide?.elements?.find(x => x.id === selectedElementId)
+                      if (!el || el.visible === false || el.locked || isGroup(el)) return null
+                      const rect = { x: el.x, y: el.y, width: el.width ?? 200, height: el.height ?? 80 }
+                      return (
+                        <SelectionBox
+                          rect={rect}
+                          rotation={el.rotation}
+                          isImage={isImage(el)}
+                          onResize={newRect => updateElement(selectedElementId, newRect as Partial<SlideElement>)}
+                          onRotate={angle => updateElement(selectedElementId, { rotation: angle } as Partial<SlideElement>)}
+                        />
+                      )
+                    })()}
+                  </div>
 
-                {/* Snap guides overlay */}
-                <SnapGuides guides={snapGuides} canvasW={CANVAS_W} canvasH={CANVAS_H} />
+                  {/* Snap guides overlay */}
+                  <SnapGuides guides={snapGuides} canvasW={CANVAS_W} canvasH={CANVAS_H} />
 
-                {/* Marquee box */}
-                {marqueeStart && marqueeEnd && (
-                  <MarqueeBox start={marqueeStart} end={marqueeEnd} />
-                )}
-              </div>
-            </div>
-          </div>
-          </div>
+                  {/* Marquee box */}
+                  {marqueeStart && marqueeEnd && (
+                    <MarqueeBox start={marqueeStart} end={marqueeEnd} />
+                  )}
+                </div>{/* end canvasRef */}
+              </div>{/* end slide canvas */}
+            </CanvasScaleContext.Provider>
+          </div>{/* end slide viewport */}
+
 
           {/* ── Speaker Notes Panel ── */}
           <SpeakerNotesPanel />

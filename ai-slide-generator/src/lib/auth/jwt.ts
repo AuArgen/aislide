@@ -78,7 +78,7 @@ export async function verifyJWT(token: string, secret: string): Promise<any | nu
     const data = encoder.encode(`${header}.${payload}`);
     const signatureBytes = decodeBase64url(signature);
 
-    const isValid = await crypto.subtle.verify('HMAC', key, signatureBytes, data);
+    const isValid = await crypto.subtle.verify('HMAC', key, signatureBytes as any, data);
 
     if (!isValid) return null;
 

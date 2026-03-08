@@ -64,7 +64,7 @@ export interface ImageFilter {
   blur?: number          // px (0–20)
 }
 
-export type MaskShape = 'none' | 'circle' | 'star' | 'hexagon' | 'device-iphone' | 'device-browser'
+export type MaskShape = 'none' | 'circle' | 'star' | 'hexagon' | 'diamond' | 'device-iphone' | 'device-browser'
 
 export interface ImageElement extends BaseElement {
   type: 'image'
