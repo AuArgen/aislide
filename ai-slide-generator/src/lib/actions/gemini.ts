@@ -1,7 +1,7 @@
 'use server'
 
 import { GoogleGenerativeAI } from '@google/generative-ai'
-import { generateSlides } from '@/lib/gemini'
+import { generateSlides, generateOutline, generateSingleSlide } from '@/lib/gemini'
 import { createPresentation } from '@/lib/actions/user'
 import { getSettingByKey } from '@/lib/actions/settings'
 import { revalidatePath } from 'next/cache'
@@ -30,6 +30,26 @@ export async function generateAndSavePresentation(userId: string, prompt: string
   } catch (error: any) {
     console.error('Action Error:', error)
     return { success: false, error: error.message || 'Генерация учурунда ката кетти' }
+  }
+}
+
+export async function generateOutlineAction(prompt: string, slideCount: number = 5, tone: string = 'business', audience: string = 'General') {
+  try {
+    const outline = await generateOutline(prompt, slideCount, tone, audience)
+    return { success: true, data: outline }
+  } catch (error: any) {
+    console.error('Outline Action Error:', error)
+    return { success: false, error: error.message || 'Планды түзүүдө ката кетти' }
+  }
+}
+
+export async function generateSingleSlideAction(outlineItem: any, colorTheme: string) {
+  try {
+    const slide = await generateSingleSlide(outlineItem, colorTheme)
+    return { success: true, data: slide }
+  } catch (error: any) {
+    console.error('Single Slide Action Error:', error)
+    return { success: false, error: error.message || 'Слайдды түзүүдө ката кетти' }
   }
 }
 
