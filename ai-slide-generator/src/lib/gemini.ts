@@ -159,7 +159,7 @@ export async function generateOutline(prompt: string, slideCount: number = 5, to
   if (!apiKey) throw new Error('Gemini API key is not configured in settings or environment variables')
 
   const genAI = new GoogleGenerativeAI(apiKey)
-  const model = genAI.getGenerativeModel({ model: 'gemini-2.5-flash' })
+  const model = genAI.getGenerativeModel({ model: 'gemini-2.5-pro' })
 
   const toneInstructions: Record<string, string> = {
     'business': 'Professional, clear, and business-oriented.',
@@ -208,7 +208,7 @@ export async function generateSingleSlide(outlineItem: any, colorTheme: string) 
   if (!apiKey) throw new Error('Gemini API key is not configured in settings or environment variables')
 
   const genAI = new GoogleGenerativeAI(apiKey)
-  const model = genAI.getGenerativeModel({ model: 'gemini-2.5-flash' })
+  const model = genAI.getGenerativeModel({ model: 'gemini-2.5-pro' })
 
   const systemPrompt = `
 You are a world-class professional presentation designer and content writer.
