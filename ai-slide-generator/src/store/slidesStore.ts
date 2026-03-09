@@ -147,8 +147,8 @@ export interface SlidesState {
   activeSlideId: string | null
 
   // ── Undo / Redo stacks (each entry is a full slides snapshot) ──────────────
-  history: Slide[][]
-  future: Slide[][]
+  history: { slides: Slide[]; activeSlideId: string | null }[]
+  future: { slides: Slide[]; activeSlideId: string | null }[]
 
   // ── Initialisation ─────────────────────────────────────────────────────────
   initSlides(slides: Slide[]): void
@@ -176,6 +176,7 @@ export interface SlidesState {
   // ── Undo / Redo ─────────────────────────────────────────────────────────────
   undo(): void
   redo(): void
+  saveHistorySnapshot(): void
 }
 
 // ─── Store ────────────────────────────────────────────────────────────────────
@@ -183,10 +184,15 @@ export interface SlidesState {
 export const useSlidesStore = create<SlidesState>((set, get) => {
   // ── Internal helper — push a snapshot to history before mutation ────────────
   function snapshot() {
-    const { slides, history } = get()
-    const prev = JSON.parse(JSON.stringify(slides)) as Slide[]
-    const newHistory = [...history, prev].slice(-MAX_HISTORY)
+    const { slides, history, activeSlideId } = get()
+    const prevSlides = JSON.parse(JSON.stringify(slides)) as Slide[]
+    const newHistory = [...history, { slides: prevSlides, activeSlideId }].slice(-MAX_HISTORY)
     return newHistory
+  }
+
+  function pushSnapshot() {
+    const newHistory = snapshot()
+    set({ history: newHistory, future: [] })
   }
 
   return {
@@ -324,24 +330,31 @@ export const useSlidesStore = create<SlidesState>((set, get) => {
 
     // ── Undo ─────────────────────────────────────────────────────────────────
     undo() {
-      const { history, slides, future } = get()
+      const { history, slides, future, activeSlideId } = get()
       if (history.length === 0) return
-      const prev = history[history.length - 1]
+      const prevEntry = history[history.length - 1]
       const newHistory = history.slice(0, -1)
-      const newFuture = [JSON.parse(JSON.stringify(slides)) as Slide[], ...future].slice(0, MAX_HISTORY)
-      const activeSlideId = prev[0]?.id ?? null
-      set({ slides: prev, history: newHistory, future: newFuture, activeSlideId })
+      const newFuture = [{ slides: JSON.parse(JSON.stringify(slides)) as Slide[], activeSlideId }, ...future].slice(0, MAX_HISTORY)
+
+      set({ slides: prevEntry.slides, history: newHistory, future: newFuture, activeSlideId: prevEntry.activeSlideId })
     },
 
     // ── Redo ─────────────────────────────────────────────────────────────────
     redo() {
-      const { future, slides, history } = get()
+      const { future, slides, history, activeSlideId } = get()
       if (future.length === 0) return
-      const next = future[0]
+      const nextEntry = future[0]
       const newFuture = future.slice(1)
-      const newHistory = [...history, JSON.parse(JSON.stringify(slides)) as Slide[]].slice(-MAX_HISTORY)
-      const activeSlideId = next[0]?.id ?? null
-      set({ slides: next, history: newHistory, future: newFuture, activeSlideId })
+      const newHistory = [...history, { slides: JSON.parse(JSON.stringify(slides)) as Slide[], activeSlideId }].slice(-MAX_HISTORY)
+
+      set({ slides: nextEntry.slides, history: newHistory, future: newFuture, activeSlideId: nextEntry.activeSlideId })
+    },
+
+    saveHistorySnapshot() {
+      const { slides, history } = get()
+      const prevEntry = history[history.length - 1]
+      if (prevEntry && JSON.stringify(prevEntry.slides) === JSON.stringify(slides)) return
+      pushSnapshot()
     },
   }
 })

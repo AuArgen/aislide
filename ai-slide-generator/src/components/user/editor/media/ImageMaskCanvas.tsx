@@ -69,6 +69,7 @@ export function ImageMaskCanvas({ element, isSelected, onUpdate }: ImageMaskCanv
   const imgY = element.maskImageY ?? 0
   const imgScale = element.maskImageScale ?? 1
   const maskShape = element.maskShape ?? 'none'
+  const [imgError, setImgError] = useState(false)
   const cssFilter = buildCssFilter(element.filters)
 
   // ── Drag-to-reposition image inside mask ──────────────────────────────────
@@ -93,21 +94,29 @@ export function ImageMaskCanvas({ element, isSelected, onUpdate }: ImageMaskCanv
     setRepositionMode(r => !r)
   }
 
-  // ── Render: no mask (plain image) ─────────────────────────────────────────
   if (maskShape === 'none') {
     return (
       <div ref={containerRef} className="w-full h-full overflow-hidden relative"
-        style={{ borderRadius: element.borderRadius ?? 0 }}
+        style={{ borderRadius: element.borderRadius ?? 0, backgroundColor: imgError || !element.src ? '#e5e7eb' : 'transparent' }}
         onDoubleClick={handleDoubleClick}
       >
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img
-          src={element.src}
-          alt={element.alt ?? ''}
-          draggable={false}
-          className="w-full h-full"
-          style={{ objectFit: element.objectFit ?? 'cover', filter: cssFilter, opacity: element.opacity ?? 1 }}
-        />
+        {(!element.src || imgError) ? (
+          <div className="w-full h-full flex items-center justify-center text-gray-400 flex-col gap-2">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect width="18" height="18" x="3" y="3" rx="2" ry="2" /><circle cx="9" cy="9" r="2" /><path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21" /></svg>
+            <span className="text-[10px] font-medium uppercase tracking-wider">Сүрөт жок</span>
+          </div>
+        ) : (
+          /* eslint-disable-next-line @next/next/no-img-element */
+          <img
+            src={element.src}
+            alt={element.alt ?? ''}
+            draggable={false}
+            onError={() => setImgError(true)}
+            onLoad={() => setImgError(false)}
+            className="w-full h-full"
+            style={{ objectFit: element.objectFit ?? 'cover', filter: cssFilter, opacity: element.opacity ?? 1 }}
+          />
+        )}
       </div>
     )
   }
@@ -140,15 +149,27 @@ export function ImageMaskCanvas({ element, isSelected, onUpdate }: ImageMaskCanv
           </clipPath>
         </defs>
 
-        {/* Clipped image */}
-        <image
-          href={element.src}
-          x={imgOffX} y={imgOffY}
-          width={imgW} height={imgH}
-          preserveAspectRatio="xMidYMid slice"
-          clipPath={`url(#mask-${maskId})`}
-          style={{ filter: cssFilter, opacity: element.opacity ?? 1 }}
-        />
+        {/* Clipped image or placeholder */}
+        {(!element.src || imgError) ? (
+          <g clipPath={`url(#mask-${maskId})`}>
+            <rect x="0" y="0" width={w} height={h} fill="#e5e7eb" />
+            {/* Simple broken image icon scaled in centre */}
+            <g transform={`translate(${w / 2 - 12} ${h / 2 - 12})`}>
+              <path fill="none" stroke="#9ca3af" strokeWidth="2" d="M3 3h18v18H3zM9 9a2 2 0 100-4 2 2 0 000 4zm12 6l-3.086-3.086a2 2 0 00-2.828 0L6 21" />
+            </g>
+          </g>
+        ) : (
+          <image
+            href={element.src}
+            x={imgOffX} y={imgOffY}
+            width={imgW} height={imgH}
+            preserveAspectRatio="xMidYMid slice"
+            clipPath={`url(#mask-${maskId})`}
+            onError={() => setImgError(true)}
+            onLoad={() => setImgError(false)}
+            style={{ filter: cssFilter, opacity: element.opacity ?? 1 }}
+          />
+        )}
 
         {/* Shape stroke (optional) */}
         <g transform={`scale(${w / 100} ${h / 100})`}>
@@ -185,9 +206,29 @@ export function ImageMaskCanvas({ element, isSelected, onUpdate }: ImageMaskCanv
 interface MaskSelectorProps {
   current: MaskShape
   onChange: (shape: MaskShape) => void
+  layout?: 'toolbar' | 'panel'
 }
 
-export function MaskSelector({ current, onChange }: MaskSelectorProps) {
+export function MaskSelector({ current, onChange, layout = 'panel' }: MaskSelectorProps) {
+  if (layout === 'toolbar') {
+    return (
+      <div className="flex items-center gap-1 shrink-0">
+        <span className="text-[10px] text-gray-400 font-bold uppercase tracking-wider hidden md:inline">Маска</span>
+        {MASK_OPTIONS.map(opt => (
+          <button
+            key={opt.value}
+            onClick={() => onChange(opt.value)}
+            title={opt.label}
+            className={`flex items-center justify-center w-7 h-7 rounded transition-colors
+              ${current === opt.value ? 'bg-blue-100 text-blue-700' : 'text-gray-600 hover:bg-gray-100'}`}
+          >
+            <span>{opt.emoji}</span>
+          </button>
+        ))}
+      </div>
+    )
+  }
+
   return (
     <div className="px-4 py-3 border-b border-gray-100">
       <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-2">Маска / Форма</p>

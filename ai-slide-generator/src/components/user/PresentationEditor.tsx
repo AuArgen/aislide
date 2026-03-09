@@ -12,7 +12,7 @@ import {
   Trash, Code, Sigma, Type,
   Plus, AlignLeft, AlignCenter, AlignRight,
   Bold, Italic, Underline, ChevronLeft, ChevronRight,
-  Check, Image, Shapes, Star, Video, Layers, Palette,
+  Check, Image, Shapes, Star, Video, Layers, Palette, PanelRight,
 } from 'lucide-react'
 import { FloatingTextToolbar } from './editor/FloatingTextToolbar'
 import { useAutoSave } from '@/lib/hooks/useAutoSave'
@@ -22,6 +22,7 @@ import { FontDropdown } from './editor/FontDropdown'
 import { useFontManager, ALL_FONTS } from '@/lib/hooks/useFontManager'
 
 // ── Media & Visual Engine imports ────────────────────────────────────────────
+import { ContextMenu } from './editor/ContextMenu'
 import { ImageUploader } from './editor/media/ImageUploader'
 import { ImageEditor } from './editor/media/ImageEditor'
 import { ImageMaskCanvas, MaskSelector } from './editor/media/ImageMaskCanvas'
@@ -48,7 +49,7 @@ import type { Rect } from '@/lib/editor/mathUtils'
 import { CanvasScaleContext, useCanvasScale } from './editor/canvas/canvasScaleContext'
 
 // ── Slide Management Engine ───────────────────────────────────────────────────
-import { useSlidesStore } from '@/store/slidesStore'
+import { useSlidesStore, makeBlankSlide } from '@/store/slidesStore'
 import { useThemeStore } from '@/store/themeStore'
 import { SlideSidebarPanel } from './editor/sidebar/SlideSidebarPanel'
 import { SpeakerNotesPanel } from './editor/panels/SpeakerNotesPanel'
@@ -183,6 +184,8 @@ function ElementWrapper({
     if ((e.target as HTMLElement).tagName === 'INPUT' || (e.target as HTMLElement).tagName === 'BUTTON') return
     if (element.locked) return
     if (isEditing) return
+
+    useSlidesStore.getState().saveHistorySnapshot()
     onSelect(e.shiftKey)
     dragStart.current = { mx: e.clientX, my: e.clientY, ex: element.x, ey: element.y }
     axisLockDominant.current = null
@@ -430,6 +433,9 @@ interface PresentationEditorProps {
 /** Thin shell — seeds the store synchronously then mounts the real editor */
 export function PresentationEditor({ initialPresentation }: PresentationEditorProps) {
   function hydrateSlides(raw: Slide[]): Slide[] {
+    if (!Array.isArray(raw) || raw.length === 0) {
+      return [makeBlankSlide('title', { id: makeId() })]
+    }
     return raw.map(slide => ({
       ...slide,
       id: slide.id || makeId(),
@@ -543,6 +549,7 @@ function PresentationEditorInner({
   const [showImageUploader, setShowImageUploader] = useState(false)
   const [showIconPicker, setShowIconPicker] = useState(false)
   const [iconPickerTargetId, setIconPickerTargetId] = useState<string | null>(null)
+  const [contextMenu, setContextMenu] = useState<{ x: number, y: number } | null>(null)
 
   const { recentFonts, selectFont } = useFontManager()
 
@@ -559,6 +566,7 @@ function PresentationEditorInner({
   // ── Right panel: Design tab state ───────────────────────────────────────────
   type RightTab = 'layers' | 'design-bg' | 'design-theme' | 'design-layout'
   const [rightTab, setRightTab] = useState<RightTab>('layers')
+  const [isRightPanelOpen, setIsRightPanelOpen] = useState(false)
 
   // ── Global theme CSS vars ───────────────────────────────────────────────
   const { activeTheme } = useThemeStore()
@@ -601,28 +609,32 @@ function PresentationEditorInner({
     setSlides(prev => { const s = [...prev]; s[index] = { ...s[index], [field]: value }; return s })
   }
 
-  const updateElement = useCallback(<T extends SlideElement>(id: string, updates: Partial<T>) => {
-    setSlides(prev => {
-      const s = [...prev]
-      // Guard: if the slide no longer exists (e.g. stale index during rapid events) bail out.
-      if (!s[currentSlideIndex]) return s
-      s[currentSlideIndex] = {
-        ...s[currentSlideIndex],
-        elements: (s[currentSlideIndex].elements ?? []).map(e => e.id === id ? { ...e, ...updates } : e),
-      }
-      return s
+  const updateElement = useCallback(<T extends SlideElement>(id: string, partial: Partial<T>) => {
+    useSlidesStore.setState((s) => {
+      const activeIdx = s.slides.findIndex(sl => sl.id === s.activeSlideId)
+      if (activeIdx === -1) return s
+      const slide = s.slides[activeIdx]
+      const newElements = slide.elements.map((el) =>
+        el.id === id ? { ...el, ...partial } : el
+      )
+      const newSlides = [...s.slides]
+      newSlides[activeIdx] = { ...slide, elements: newElements }
+      return { slides: newSlides }
     })
-  }, [currentSlideIndex, setSlides])
+  }, [])
 
-  const removeElement = (id: string) => {
-    setSlides(prev => {
-      const s = [...prev]
-      if (!s[currentSlideIndex]) return s
-      s[currentSlideIndex] = { ...s[currentSlideIndex], elements: (s[currentSlideIndex].elements ?? []).filter(e => e.id !== id) }
-      return s
+  const removeElement = useCallback((id: string) => {
+    useSlidesStore.setState((s) => {
+      const activeIdx = s.slides.findIndex(sl => sl.id === s.activeSlideId)
+      if (activeIdx === -1) return s
+      const slide = s.slides[activeIdx]
+      const newElements = slide.elements.filter((el) => el.id !== id)
+      const newSlides = [...s.slides]
+      newSlides[activeIdx] = { ...slide, elements: newElements }
+      return { slides: newSlides }
     })
     if (selectedIds.includes(id)) clearSelection()
-  }
+  }, [selectedIds, clearSelection])
 
   const addElement = (type: SlideElement['type'], extraProps?: Partial<SlideElement>) => {
     const els = currentSlide.elements || []
@@ -724,12 +736,130 @@ function PresentationEditorInner({
     clearSelection()
   }
 
-  // ── Keyboard nudge + delete ────────────────────────────────────────────────────────────
+  // ── Keyboard nudge + delete + hotkeys ──────────────────────────────────────────────────
+  const handleCopy = useCallback(() => {
+    if (selectedIds.length === 0) return
+    const els = slides[currentSlideIndex]?.elements.filter(e => selectedIds.includes(e.id)) || []
+    useEditorStore.getState().setClipboard(els)
+  }, [selectedIds, slides, currentSlideIndex])
+
+  const handlePaste = useCallback(() => {
+    const cb = useEditorStore.getState().clipboard
+    if (cb.length === 0) return
+
+    // Create new IDs and offset slightly
+    const newEls = cb.map(el => ({
+      ...el,
+      id: makeId(),
+      x: (el.x || 0) + 20,
+      y: (el.y || 0) + 20
+    }))
+
+    setSlides(prev => {
+      const s = [...prev]
+      if (!s[currentSlideIndex]) return s
+      // Push history before mutating
+      const newHistory = [...useSlidesStore.getState().history, JSON.parse(JSON.stringify(s))]
+      if (newHistory.length > 50) newHistory.shift()
+      useSlidesStore.setState({ history: newHistory, future: [] })
+      s[currentSlideIndex] = {
+        ...s[currentSlideIndex],
+        elements: [...(s[currentSlideIndex].elements || []), ...newEls]
+      }
+      return s
+    })
+    selectIds(newEls.map(e => e.id))
+  }, [currentSlideIndex, setSlides, selectIds])
+
+  const handleDuplicate = useCallback(() => {
+    if (selectedIds.length === 0) return
+    const els = slides[currentSlideIndex]?.elements.filter(e => selectedIds.includes(e.id)) || []
+    const newEls = els.map(el => ({
+      ...el,
+      id: makeId(),
+      x: (el.x || 0) + 20,
+      y: (el.y || 0) + 20
+    }))
+
+    setSlides(prev => {
+      const s = [...prev]
+      if (!s[currentSlideIndex]) return s
+      const newHistory = [...useSlidesStore.getState().history, JSON.parse(JSON.stringify(s))]
+      if (newHistory.length > 50) newHistory.shift()
+      useSlidesStore.setState({ history: newHistory, future: [] })
+      s[currentSlideIndex] = {
+        ...s[currentSlideIndex],
+        elements: [...(s[currentSlideIndex].elements || []), ...newEls]
+      }
+      return s
+    })
+    selectIds(newEls.map(e => e.id))
+  }, [selectedIds, slides, currentSlideIndex, setSlides, selectIds])
+
+  const handleBringForward = useCallback(() => {
+    if (selectedIds.length === 0) return
+    setSlides(prev => {
+      const s = [...prev]
+      const slide = s[currentSlideIndex]
+      if (!slide) return s
+      const newHistory = [...useSlidesStore.getState().history, JSON.parse(JSON.stringify(s))]
+      if (newHistory.length > 50) newHistory.shift()
+      useSlidesStore.setState({ history: newHistory, future: [] })
+
+      const els = [...(slide.elements || [])]
+      const toMove = els.filter(e => selectedIds.includes(e.id))
+      const others = els.filter(e => !selectedIds.includes(e.id))
+      slide.elements = [...others, ...toMove]
+
+      return s
+    })
+  }, [selectedIds, currentSlideIndex, setSlides])
+
+  const handleSendBackward = useCallback(() => {
+    if (selectedIds.length === 0) return
+    setSlides(prev => {
+      const s = [...prev]
+      const slide = s[currentSlideIndex]
+      if (!slide) return s
+      const newHistory = [...useSlidesStore.getState().history, JSON.parse(JSON.stringify(s))]
+      if (newHistory.length > 50) newHistory.shift()
+      useSlidesStore.setState({ history: newHistory, future: [] })
+
+      const els = [...(slide.elements || [])]
+      const toMove = els.filter(e => selectedIds.includes(e.id))
+      const others = els.filter(e => !selectedIds.includes(e.id))
+      slide.elements = [...toMove, ...others]
+
+      return s
+    })
+  }, [selectedIds, currentSlideIndex, setSlides])
+
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       // Only act when editor has focus and something is selected (not editing text)
       const active = document.activeElement
       if (active instanceof HTMLInputElement || active instanceof HTMLTextAreaElement || (active as HTMLElement)?.contentEditable === 'true') return
+
+      // Copy / Paste / Cut / Duplicate
+      if (e.key === 'c' && (e.metaKey || e.ctrlKey)) {
+        handleCopy()
+        return
+      }
+      if (e.key === 'x' && (e.metaKey || e.ctrlKey)) {
+        handleCopy()
+        selectedIds.forEach(id => removeElement(id))
+        return
+      }
+      if (e.key === 'v' && (e.metaKey || e.ctrlKey)) {
+        handlePaste()
+        return
+      }
+      if (e.key === 'd' && (e.metaKey || e.ctrlKey)) {
+        e.preventDefault()
+        handleDuplicate()
+        return
+      }
+
       if (selectedIds.length === 0) return
 
       if (e.key === 'Escape') { clearSelection(); return }
@@ -743,6 +873,7 @@ function PresentationEditorInner({
       if (e.key === 'ArrowDown') { dy = nudge; e.preventDefault() }
 
       if (dx !== 0 || dy !== 0) {
+        useSlidesStore.getState().saveHistorySnapshot()
         selectedIds.forEach(id => {
           const el = slides[currentSlideIndex]?.elements.find(x => x.id === id)
           if (el && !el.locked) updateElement(id, { x: el.x + dx, y: el.y + dy })
@@ -751,12 +882,76 @@ function PresentationEditorInner({
       }
 
       if (e.key === 'Delete' || e.key === 'Backspace') {
+        useSlidesStore.getState().saveHistorySnapshot()
         selectedIds.forEach(id => removeElement(id))
       }
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [selectedIds, slides, currentSlideIndex, updateElement, removeElement, clearSelection])
+  }, [selectedIds, slides, currentSlideIndex, updateElement, removeElement, clearSelection, handleCopy, handlePaste, handleDuplicate])
+
+  // ── Smart Image Insertion (calculates aspect ratio to prevent cropping) ──────────
+  const insertImage = (src: string) => {
+    const img = new window.Image()
+    img.onload = () => {
+      let w = img.naturalWidth
+      let h = img.naturalHeight
+
+      const MAX_W = 800
+      const MAX_H = 600
+
+      // Scale down if it exceeds max bounds while preserving aspect ratio
+      if (w > MAX_W || h > MAX_H) {
+        const ratio = Math.min(MAX_W / w, MAX_H / h)
+        w *= ratio
+        h *= ratio
+      }
+
+      // Minimum constraints
+      w = Math.max(100, Math.round(w))
+      h = Math.max(100, Math.round(h))
+
+      useSlidesStore.getState().saveHistorySnapshot()
+      addElement('image', { src, width: w, height: h } as Partial<ImageElement>)
+    }
+    img.src = src
+  }
+
+  // ── OS Clipboard Image Paste ───────────────────────────────────────────────────
+  useEffect(() => {
+    const handleOSPaste = async (e: ClipboardEvent) => {
+      // Don't intercept if user is typing in an input
+      const active = document.activeElement
+      if (active instanceof HTMLInputElement || active instanceof HTMLTextAreaElement || (active as HTMLElement)?.contentEditable === 'true') {
+        return
+      }
+
+      const items = e.clipboardData?.items
+      if (!items) return
+
+      for (const item of Array.from(items)) {
+        if (item.type.startsWith('image/')) {
+          e.preventDefault()
+          const file = item.getAsFile()
+          if (!file) continue
+
+          // Read image as base64 data URL
+          const reader = new FileReader()
+          reader.onload = (ev) => {
+            const src = ev.target?.result as string
+            if (src) {
+              insertImage(src)
+            }
+          }
+          reader.readAsDataURL(file)
+          break // Only handle first image
+        }
+      }
+    }
+
+    window.addEventListener('paste', handleOSPaste)
+    return () => window.removeEventListener('paste', handleOSPaste)
+  }, [addElement])
 
   const handleFontChange = async (fontName: string) => {
     const family = await selectFont(fontName)
@@ -786,9 +981,7 @@ function PresentationEditorInner({
       {/* ── Modals ─────────────────────────────────────────────────────────── */}
       {showImageUploader && (
         <ImageUploader
-          onInsert={src => {
-            addElement('image', { src } as Partial<ImageElement>)
-          }}
+          onInsert={src => insertImage(src)}
           onClose={() => setShowImageUploader(false)}
         />
       )}
@@ -804,6 +997,35 @@ function PresentationEditorInner({
             }
           }}
           onClose={() => { setShowIconPicker(false); setIconPickerTargetId(null) }}
+        />
+      )}
+
+      {contextMenu && (
+        <ContextMenu
+          x={contextMenu.x}
+          y={contextMenu.y}
+          onClose={() => setContextMenu(null)}
+          onAction={(action) => {
+            setContextMenu(null)
+            switch (action) {
+              case 'undo': useSlidesStore.getState().undo(); break;
+              case 'redo': useSlidesStore.getState().redo(); break;
+              case 'cut':
+                handleCopy()
+                selectedIds.forEach(id => removeElement(id))
+                break;
+              case 'copy': handleCopy(); break;
+              case 'paste': handlePaste(); break;
+              case 'duplicate': handleDuplicate(); break;
+              case 'delete': selectedIds.forEach(id => removeElement(id)); break;
+              case 'bringForward': handleBringForward(); break;
+              case 'sendBackward': handleSendBackward(); break;
+            }
+          }}
+          hasSelection={selectedIds.length > 0}
+          hasClipboard={useEditorStore.getState().clipboard.length > 0}
+          canUndo={useSlidesStore.getState().history.length > 0}
+          canRedo={useSlidesStore.getState().future.length > 0}
         />
       )}
 
@@ -854,23 +1076,23 @@ function PresentationEditorInner({
                   <div className="w-px h-5 bg-gray-200 shrink-0" />
                   {/* Font size */}
                   <div className="flex items-center gap-1 shrink-0">
-                    <button onClick={() => updateElement(selectedElement.id, { fontSize: Math.max(8, (selectedElement.fontSize ?? 24) - 2) })} className="w-7 h-7 rounded hover:bg-gray-100 flex items-center justify-center font-bold text-gray-600 text-sm">−</button>
+                    <button onClick={() => { useSlidesStore.getState().saveHistorySnapshot(); updateElement(selectedElement.id, { fontSize: Math.max(8, (selectedElement.fontSize ?? 24) - 2) }) }} className="w-7 h-7 rounded hover:bg-gray-100 flex items-center justify-center font-bold text-gray-600 text-sm">−</button>
                     <span className="w-8 text-center text-xs font-bold text-gray-700">{selectedElement.fontSize ?? 24}</span>
-                    <button onClick={() => updateElement(selectedElement.id, { fontSize: Math.min(120, (selectedElement.fontSize ?? 24) + 2) })} className="w-7 h-7 rounded hover:bg-gray-100 flex items-center justify-center font-bold text-gray-600 text-sm">+</button>
+                    <button onClick={() => { useSlidesStore.getState().saveHistorySnapshot(); updateElement(selectedElement.id, { fontSize: Math.min(120, (selectedElement.fontSize ?? 24) + 2) }) }} className="w-7 h-7 rounded hover:bg-gray-100 flex items-center justify-center font-bold text-gray-600 text-sm">+</button>
                   </div>
                   <div className="w-px h-5 bg-gray-200 shrink-0" />
                   {/* B / I / U */}
-                  <button onClick={() => updateElement(selectedElement.id, { fontWeight: selectedElement.fontWeight === 'bold' ? 'normal' : 'bold' })} className={`w-8 h-8 rounded flex items-center justify-center transition-colors ${selectedElement.fontWeight === 'bold' ? 'bg-gray-900 text-white' : 'hover:bg-gray-100 text-gray-700'}`}><Bold size={13} /></button>
-                  <button onClick={() => updateElement(selectedElement.id, { fontStyle: selectedElement.fontStyle === 'italic' ? 'normal' : 'italic' })} className={`w-8 h-8 rounded flex items-center justify-center transition-colors ${selectedElement.fontStyle === 'italic' ? 'bg-gray-900 text-white' : 'hover:bg-gray-100 text-gray-700'}`}><Italic size={13} /></button>
-                  <button onClick={() => updateElement(selectedElement.id, { textDecoration: selectedElement.textDecoration === 'underline' ? 'none' : 'underline' })} className={`w-8 h-8 rounded flex items-center justify-center transition-colors ${selectedElement.textDecoration === 'underline' ? 'bg-gray-900 text-white' : 'hover:bg-gray-100 text-gray-700'}`}><Underline size={13} /></button>
+                  <button onClick={() => { useSlidesStore.getState().saveHistorySnapshot(); updateElement(selectedElement.id, { fontWeight: selectedElement.fontWeight === 'bold' ? 'normal' : 'bold' }) }} className={`w-8 h-8 rounded flex items-center justify-center transition-colors ${selectedElement.fontWeight === 'bold' ? 'bg-gray-900 text-white' : 'hover:bg-gray-100 text-gray-700'}`}><Bold size={13} /></button>
+                  <button onClick={() => { useSlidesStore.getState().saveHistorySnapshot(); updateElement(selectedElement.id, { fontStyle: selectedElement.fontStyle === 'italic' ? 'normal' : 'italic' }) }} className={`w-8 h-8 rounded flex items-center justify-center transition-colors ${selectedElement.fontStyle === 'italic' ? 'bg-gray-900 text-white' : 'hover:bg-gray-100 text-gray-700'}`}><Italic size={13} /></button>
+                  <button onClick={() => { useSlidesStore.getState().saveHistorySnapshot(); updateElement(selectedElement.id, { textDecoration: selectedElement.textDecoration === 'underline' ? 'none' : 'underline' }) }} className={`w-8 h-8 rounded flex items-center justify-center transition-colors ${selectedElement.textDecoration === 'underline' ? 'bg-gray-900 text-white' : 'hover:bg-gray-100 text-gray-700'}`}><Underline size={13} /></button>
                   <div className="w-px h-5 bg-gray-200 shrink-0" />
                   {/* Align */}
-                  <button onClick={() => updateElement(selectedElement.id, { align: 'left' })} className={`w-8 h-8 rounded flex items-center justify-center transition-colors ${(!selectedElement.align || selectedElement.align === 'left') ? 'bg-blue-100 text-blue-600' : 'hover:bg-gray-100 text-gray-600'}`}><AlignLeft size={13} /></button>
-                  <button onClick={() => updateElement(selectedElement.id, { align: 'center' })} className={`w-8 h-8 rounded flex items-center justify-center transition-colors ${selectedElement.align === 'center' ? 'bg-blue-100 text-blue-600' : 'hover:bg-gray-100 text-gray-600'}`}><AlignCenter size={13} /></button>
-                  <button onClick={() => updateElement(selectedElement.id, { align: 'right' })} className={`w-8 h-8 rounded flex items-center justify-center transition-colors ${selectedElement.align === 'right' ? 'bg-blue-100 text-blue-600' : 'hover:bg-gray-100 text-gray-600'}`}><AlignRight size={13} /></button>
+                  <button onClick={() => { useSlidesStore.getState().saveHistorySnapshot(); updateElement(selectedElement.id, { align: 'left' }) }} className={`w-8 h-8 rounded flex items-center justify-center transition-colors ${(!selectedElement.align || selectedElement.align === 'left') ? 'bg-blue-100 text-blue-600' : 'hover:bg-gray-100 text-gray-600'}`}><AlignLeft size={13} /></button>
+                  <button onClick={() => { useSlidesStore.getState().saveHistorySnapshot(); updateElement(selectedElement.id, { align: 'center' }) }} className={`w-8 h-8 rounded flex items-center justify-center transition-colors ${selectedElement.align === 'center' ? 'bg-blue-100 text-blue-600' : 'hover:bg-gray-100 text-gray-600'}`}><AlignCenter size={13} /></button>
+                  <button onClick={() => { useSlidesStore.getState().saveHistorySnapshot(); updateElement(selectedElement.id, { align: 'right' }) }} className={`w-8 h-8 rounded flex items-center justify-center transition-colors ${selectedElement.align === 'right' ? 'bg-blue-100 text-blue-600' : 'hover:bg-gray-100 text-gray-600'}`}><AlignRight size={13} /></button>
                   <div className="w-px h-5 bg-gray-200 shrink-0" />
                   {/* Text color */}
-                  <label className="flex items-center gap-1.5 cursor-pointer shrink-0">
+                  <label className="flex items-center gap-1.5 cursor-pointer shrink-0" onPointerDown={() => useSlidesStore.getState().saveHistorySnapshot()}>
                     <span className="text-[10px] text-gray-400 font-bold uppercase tracking-wider">Текст</span>
                     <div className="relative w-7 h-7">
                       <div className="w-full h-full rounded-full border-2 border-gray-300" style={{ backgroundColor: selectedElement.color || '#1f2937' }} />
@@ -896,6 +1118,7 @@ function PresentationEditorInner({
               {/* Image mask selector in toolbar */}
               {isImage(selectedElement) && (
                 <MaskSelector
+                  layout="toolbar"
                   current={selectedElement.maskShape ?? 'none'}
                   onChange={shape => updateElement<ImageElement>(selectedElement.id, { maskShape: shape as MaskShape })}
                 />
@@ -912,6 +1135,7 @@ function PresentationEditorInner({
                 <SyncStatusBadge />
                 <div className="text-[10px] text-blue-500 bg-blue-50 px-2 py-1 rounded-lg font-medium">2× = өзгөртүү</div>
                 <span className="text-xs text-gray-400">{currentSlideIndex + 1}/{slides.length}</span>
+                <button onClick={() => setIsRightPanelOpen(p => !p)} className={`p-1.5 rounded-lg transition-colors ${isRightPanelOpen ? 'bg-indigo-100 text-indigo-600' : 'bg-gray-100 hover:bg-gray-200 text-gray-600'}`} title="Оң панелди ачуу / жабуу"><PanelRight size={14} /></button>
               </div>
             </>
           ) : (
@@ -975,6 +1199,7 @@ function PresentationEditorInner({
               <div className="ml-auto flex items-center gap-2 shrink-0">
                 <SyncStatusBadge />
                 <span className="text-xs font-medium text-gray-400">{currentSlideIndex + 1} / {slides.length}</span>
+                <button onClick={() => setIsRightPanelOpen(p => !p)} className={`p-1.5 rounded-lg transition-colors ${isRightPanelOpen ? 'bg-indigo-100 text-indigo-600' : 'bg-gray-100 hover:bg-gray-200 text-gray-600'}`} title="Оң панелди ачуу / жабуу"><PanelRight size={14} /></button>
               </div>
             </>
           )}
@@ -1032,12 +1257,14 @@ function PresentationEditorInner({
               position: 'relative',
             }}
           >
-            {/* Wrap canvas in context so ElementWrapper + SelectionBox can
-                read canvasScale without prop-drilling. */}
             <CanvasScaleContext.Provider value={canvasScale}>
               {/* The slide canvas — true 1920×1080, scaled from centre */}
               <div
                 id="slide-canvas"
+                onContextMenu={(e) => {
+                  e.preventDefault()
+                  setContextMenu({ x: e.clientX, y: e.clientY })
+                }}
                 style={{
                   width: CANVAS_W,
                   height: CANVAS_H,
@@ -1088,15 +1315,6 @@ function PresentationEditorInner({
                       }}
                     />
                   )}
-                  {/* Title */}
-                  <input
-                    value={currentSlide?.title || ''}
-                    onChange={e => updateSlideField(currentSlideIndex, 'title', e.target.value)}
-                    placeholder="Аталышы..."
-                    className="absolute top-0 left-0 right-0 w-full bg-transparent border-none outline-none font-black px-24 pt-20"
-                    style={{ fontSize: `${currentSlide?.style?.titleSize || 96}px`, color: currentSlide?.titleColor || '#1f2937', lineHeight: 1.15, zIndex: 10 }}
-                  />
-
                   {/* Elements + SelectionBox share the same offset container */}
                   <div className="absolute inset-0" style={{ zIndex: 20 }}>
                     {currentSlide?.elements?.map(el => {
@@ -1161,115 +1379,119 @@ function PresentationEditorInner({
       </div>
 
       {/* ── Right panel — context-sensitive ───────────────────────────────── */}
-      {showTypographyPanel && selectedElement && (
-        <TypographyPanel
-          element={selectedElement}
-          onUpdate={updates => updateElement(selectedElement.id, updates)}
-        />
-      )}
-      {showImagePanel && selectedElement && isImage(selectedElement) && (
-        <ImageEditor
-          element={selectedElement}
-          onUpdate={updates => updateElement<ImageElement>(selectedElement.id, updates)}
-        />
-      )}
-      {showShapePanel && selectedElement && isShape(selectedElement) && (
-        <ShapeControls
-          element={selectedElement}
-          onUpdate={updates => updateElement<ShapeElement>(selectedElement.id, updates)}
-        />
-      )}
-      {showIconPanel && selectedElement && isIcon(selectedElement) && (
-        <IconControls
-          element={selectedElement}
-          onUpdate={updates => updateElement<IconElement>(selectedElement.id, updates)}
-          onOpenPicker={() => {
-            setIconPickerTargetId(selectedElement.id)
-            setShowIconPicker(true)
-          }}
-        />
-      )}
-      {showVideoPanel && selectedElement && isVideo(selectedElement) && (
-        <VideoControls
-          element={selectedElement}
-          onUpdate={updates => updateElement<VideoElement>(selectedElement.id, updates)}
-        />
-      )}
-      {showLayersPanel && (
-        <div
-          className="w-[240px] shrink-0 bg-white border-l border-gray-200 flex flex-col shadow-sm overflow-hidden"
-          style={{
-            '--theme-primary': activeTheme.colors.primary,
-            '--theme-secondary': activeTheme.colors.secondary,
-            '--theme-text': activeTheme.colors.text,
-            '--theme-background': activeTheme.colors.background,
-            '--theme-accent': activeTheme.colors.accent,
-          } as React.CSSProperties}
-        >
-          {/* Tab header */}
-          <div className="flex border-b border-gray-100 shrink-0">
-            <button
-              onClick={() => setRightTab('layers')}
-              className={`flex-1 flex items-center justify-center gap-1 py-2.5 text-[11px] font-semibold transition-colors
-                ${rightTab === 'layers'
-                  ? 'text-indigo-600 border-b-2 border-indigo-500 bg-indigo-50/50'
-                  : 'text-gray-500 hover:text-gray-700'}`}
-            >
-              <Layers size={12} /> Катмарлар
-            </button>
-            <button
-              onClick={() => setRightTab(t => t === 'layers' ? 'design-bg' : t)}
-              className={`flex-1 flex items-center justify-center gap-1 py-2.5 text-[11px] font-semibold transition-colors
-                ${rightTab !== 'layers'
-                  ? 'text-indigo-600 border-b-2 border-indigo-500 bg-indigo-50/50'
-                  : 'text-gray-500 hover:text-gray-700'}`}
-            >
-              <Palette size={12} /> Дизайн
-            </button>
-          </div>
-
-          {/* Layers tab */}
-          {rightTab === 'layers' && (
-            <LayersPanel
-              elements={currentSlide?.elements ?? []}
-              selectedIds={selectedIds}
-              onSelectIds={selectIds}
-              onUpdateElements={updateElementsOnSlide}
+      {isRightPanelOpen && (
+        <>
+          {showTypographyPanel && selectedElement && (
+            <TypographyPanel
+              element={selectedElement}
+              onUpdate={updates => updateElement(selectedElement.id, updates)}
             />
           )}
-
-          {/* Design tabs */}
-          {rightTab !== 'layers' && (
-            <>
-              {/* Design sub-tabs */}
-              <div className="flex border-b border-gray-100 bg-gray-50 shrink-0 px-1 pt-1 gap-0.5">
-                {([
-                  { id: 'design-bg' as RightTab, label: 'Фон' },
-                  { id: 'design-theme' as RightTab, label: 'Тема' },
-                  { id: 'design-layout' as RightTab, label: 'Макет' },
-                ] as { id: RightTab; label: string }[]).map(({ id, label }) => (
-                  <button
-                    key={id}
-                    onClick={() => setRightTab(id)}
-                    className={`flex-1 text-[10px] font-bold py-1.5 rounded-t-lg transition-colors
-                      ${rightTab === id
-                        ? 'bg-white text-indigo-600'
-                        : 'text-gray-500 hover:text-gray-700'}`}
-                  >
-                    {label}
-                  </button>
-                ))}
-              </div>
-
-              {/* Sub-tab content */}
-              <div className="flex-1 overflow-hidden">
-                {rightTab === 'design-bg' && <BackgroundPanel />}
-                {rightTab === 'design-theme' && <ThemePanel />}
-                {rightTab === 'design-layout' && <LayoutPicker />}
-              </div>
-            </>
+          {showImagePanel && selectedElement && isImage(selectedElement) && (
+            <ImageEditor
+              element={selectedElement}
+              onUpdate={updates => updateElement<ImageElement>(selectedElement.id, updates)}
+            />
           )}
-        </div>
+          {showShapePanel && selectedElement && isShape(selectedElement) && (
+            <ShapeControls
+              element={selectedElement}
+              onUpdate={updates => updateElement<ShapeElement>(selectedElement.id, updates)}
+            />
+          )}
+          {showIconPanel && selectedElement && isIcon(selectedElement) && (
+            <IconControls
+              element={selectedElement}
+              onUpdate={updates => updateElement<IconElement>(selectedElement.id, updates)}
+              onOpenPicker={() => {
+                setIconPickerTargetId(selectedElement.id)
+                setShowIconPicker(true)
+              }}
+            />
+          )}
+          {showVideoPanel && selectedElement && isVideo(selectedElement) && (
+            <VideoControls
+              element={selectedElement}
+              onUpdate={updates => updateElement<VideoElement>(selectedElement.id, updates)}
+            />
+          )}
+          {showLayersPanel && (
+            <div
+              className="w-[240px] shrink-0 bg-white border-l border-gray-200 flex flex-col shadow-sm overflow-hidden"
+              style={{
+                '--theme-primary': activeTheme.colors.primary,
+                '--theme-secondary': activeTheme.colors.secondary,
+                '--theme-text': activeTheme.colors.text,
+                '--theme-background': activeTheme.colors.background,
+                '--theme-accent': activeTheme.colors.accent,
+              } as React.CSSProperties}
+            >
+              {/* Tab header */}
+              <div className="flex border-b border-gray-100 shrink-0">
+                <button
+                  onClick={() => setRightTab('layers')}
+                  className={`flex-1 flex items-center justify-center gap-1 py-2.5 text-[11px] font-semibold transition-colors
+                ${rightTab === 'layers'
+                      ? 'text-indigo-600 border-b-2 border-indigo-500 bg-indigo-50/50'
+                      : 'text-gray-500 hover:text-gray-700'}`}
+                >
+                  <Layers size={12} /> Катмарлар
+                </button>
+                <button
+                  onClick={() => setRightTab(t => t === 'layers' ? 'design-bg' : t)}
+                  className={`flex-1 flex items-center justify-center gap-1 py-2.5 text-[11px] font-semibold transition-colors
+                ${rightTab !== 'layers'
+                      ? 'text-indigo-600 border-b-2 border-indigo-500 bg-indigo-50/50'
+                      : 'text-gray-500 hover:text-gray-700'}`}
+                >
+                  <Palette size={12} /> Дизайн
+                </button>
+              </div>
+
+              {/* Layers tab */}
+              {rightTab === 'layers' && (
+                <LayersPanel
+                  elements={currentSlide?.elements ?? []}
+                  selectedIds={selectedIds}
+                  onSelectIds={selectIds}
+                  onUpdateElements={updateElementsOnSlide}
+                />
+              )}
+
+              {/* Design tabs */}
+              {rightTab !== 'layers' && (
+                <>
+                  {/* Design sub-tabs */}
+                  <div className="flex border-b border-gray-100 bg-gray-50 shrink-0 px-1 pt-1 gap-0.5">
+                    {([
+                      { id: 'design-bg' as RightTab, label: 'Фон' },
+                      { id: 'design-theme' as RightTab, label: 'Тема' },
+                      { id: 'design-layout' as RightTab, label: 'Макет' },
+                    ] as { id: RightTab; label: string }[]).map(({ id, label }) => (
+                      <button
+                        key={id}
+                        onClick={() => setRightTab(id)}
+                        className={`flex-1 text-[10px] font-bold py-1.5 rounded-t-lg transition-colors
+                      ${rightTab === id
+                            ? 'bg-white text-indigo-600'
+                            : 'text-gray-500 hover:text-gray-700'}`}
+                      >
+                        {label}
+                      </button>
+                    ))}
+                  </div>
+
+                  {/* Sub-tab content */}
+                  <div className="flex-1 overflow-hidden">
+                    {rightTab === 'design-bg' && <BackgroundPanel />}
+                    {rightTab === 'design-theme' && <ThemePanel />}
+                    {rightTab === 'design-layout' && <LayoutPicker />}
+                  </div>
+                </>
+              )}
+            </div>
+          )}
+        </>
       )}
     </div>
   )

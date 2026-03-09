@@ -3,11 +3,13 @@
 import Link from 'next/link'
 import { LoginButton } from '@/components/auth/LoginButton'
 import { useEffect, useState } from 'react'
+import { usePathname } from 'next/navigation'
 import { decodeToken } from '@/lib/auth/auth-helpers'
 
 export function Navbar() {
   const [user, setUser] = useState<{ email: string; name: string; role?: string } | null>(null)
   const [isLoading, setIsLoading] = useState(true)
+  const pathname = usePathname()
 
   useEffect(() => {
     const checkAuth = () => {
@@ -41,6 +43,10 @@ export function Navbar() {
   }
 
   const isAdmin = user?.role === 'admin'
+
+  if (pathname?.startsWith('/editor') || pathname?.startsWith('/presentation')) {
+    return null
+  }
 
   return (
     <nav className="border-b border-gray-100 bg-white/80 backdrop-blur-md sticky top-0 z-50">

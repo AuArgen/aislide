@@ -1,7 +1,8 @@
 'use client'
 
 import { useRef, useState, useCallback, useEffect } from 'react'
-import { Plus, Layout } from 'lucide-react'
+import { Plus, Layout, Home } from 'lucide-react'
+import Link from 'next/link'
 import { useSlidesStore } from '@/store/slidesStore'
 import { SlideThumbnail } from './SlideThumbnail'
 import { useSlideHotkeys } from '@/lib/hooks/useSlideHotkeys'
@@ -111,50 +112,53 @@ export function SlideSidebarPanel({
   // ── Render ────────────────────────────────────────────────────────────────────
   return (
     <div className="w-[220px] shrink-0 bg-white border-r border-gray-200 flex flex-col shadow-sm">
-      {/* ── Header ── */}
-      <div className="px-4 py-3 border-b border-gray-100 flex items-center justify-between shrink-0">
-        <h3 className="font-bold text-gray-700 text-sm">Слайддар</h3>
-        <div className="flex items-center gap-2">
-          <span
-            className={`text-[10px] px-2 py-0.5 rounded-full font-medium transition-all ${
-              isSaving ? 'bg-blue-100 text-blue-600 animate-pulse' : 'bg-gray-100 text-gray-400'
-            }`}
-          >
-            {isSaving ? 'Сакталууда...' : 'Сакталды'}
-          </span>
-          {/* Add slide — click opens layout picker */}
-          <div className="relative">
-            <button
-              title="Слайд кошуу"
-              onClick={() => setShowLayoutMenu(m => !m)}
-              className="w-7 h-7 bg-blue-500 hover:bg-blue-600 text-white rounded-lg flex items-center justify-center transition-colors"
+      <div className="px-3 py-2 border-b border-gray-100 flex flex-col gap-2 shrink-0">
+        <Link href="/dashboard" className="flex items-center gap-1.5 text-[11px] font-bold text-gray-500 hover:text-blue-600 transition-colors bg-gray-50 hover:bg-blue-50 px-2 py-1.5 rounded-lg w-max">
+          <Home size={12} /> Башкы бет
+        </Link>
+        <div className="flex items-center justify-between">
+          <h3 className="font-bold text-gray-700 text-sm">Слайддар</h3>
+          <div className="flex items-center gap-2">
+            <span
+              className={`text-[10px] px-2 py-0.5 rounded-full font-medium transition-all ${isSaving ? 'bg-blue-100 text-blue-600 animate-pulse' : 'bg-gray-100 text-gray-400'
+                }`}
             >
-              <Plus size={14} />
-            </button>
-            {showLayoutMenu && (
-              <div className="absolute top-full right-0 mt-1 z-50 bg-white rounded-xl shadow-xl border border-gray-100 overflow-hidden min-w-[150px]">
-                {(
-                  [
-                    { key: 'blank' as SlideLayoutType, label: '⬜ Бош слайд' },
-                    { key: 'title' as SlideLayoutType, label: '📋 Аталыш' },
-                    { key: 'title-body' as SlideLayoutType, label: '📄 Аталыш + Текст' },
-                    { key: 'two-column' as SlideLayoutType, label: '⣿ Эки мамыча' },
-                  ] as { key: SlideLayoutType; label: string }[]
-                ).map(({ key, label }) => (
-                  <button
-                    key={key}
-                    onPointerDown={e => e.stopPropagation()}
-                    onClick={() => {
-                      addSlide({ layoutType: key, afterId: activeSlideId ?? undefined })
-                      setShowLayoutMenu(false)
-                    }}
-                    className="w-full text-left px-3 py-2 text-[12px] font-medium text-gray-700 hover:bg-blue-50 hover:text-blue-600 transition-colors"
-                  >
-                    {label}
-                  </button>
-                ))}
-              </div>
-            )}
+              {isSaving ? 'Сакталууда...' : 'Сакталды'}
+            </span>
+            {/* Add slide — click opens layout picker */}
+            <div className="relative">
+              <button
+                title="Слайд кошуу"
+                onClick={() => setShowLayoutMenu(m => !m)}
+                className="w-7 h-7 bg-blue-500 hover:bg-blue-600 text-white rounded-lg flex items-center justify-center transition-colors"
+              >
+                <Plus size={14} />
+              </button>
+              {showLayoutMenu && (
+                <div className="absolute top-full right-0 mt-1 z-50 bg-white rounded-xl shadow-xl border border-gray-100 overflow-hidden min-w-[150px]">
+                  {(
+                    [
+                      { key: 'blank' as SlideLayoutType, label: '⬜ Бош слайд' },
+                      { key: 'title' as SlideLayoutType, label: '📋 Аталыш' },
+                      { key: 'title-body' as SlideLayoutType, label: '📄 Аталыш + Текст' },
+                      { key: 'two-column' as SlideLayoutType, label: '⣿ Эки мамыча' },
+                    ] as { key: SlideLayoutType; label: string }[]
+                  ).map(({ key, label }) => (
+                    <button
+                      key={key}
+                      onPointerDown={e => e.stopPropagation()}
+                      onClick={() => {
+                        addSlide({ layoutType: key, afterId: activeSlideId ?? undefined })
+                        setShowLayoutMenu(false)
+                      }}
+                      className="w-full text-left px-3 py-2 text-[12px] font-medium text-gray-700 hover:bg-blue-50 hover:text-blue-600 transition-colors"
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
           </div>
         </div>
       </div>

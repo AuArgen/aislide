@@ -18,6 +18,7 @@ import { snapAngleIfClose } from '@/lib/editor/mathUtils'
 import type { ResizeHandle, ResizeOptions } from '@/lib/editor/transformUtils'
 import type { Rect } from '@/lib/editor/mathUtils'
 import { useCanvasScale } from './canvasScaleContext'
+import { useSlidesStore } from '@/store/slidesStore'
 
 interface SelectionBoxProps {
   /** Bounding box in canvas-local px */
@@ -42,14 +43,14 @@ interface HandleDesc {
 }
 
 const HANDLES: HandleDesc[] = [
-  { id: 'nw', style: { top: -5, left: -5 },                              cursor: 'nwse-resize' },
-  { id: 'n',  style: { top: -5, left: '50%', transform: 'translateX(-50%)' }, cursor: 'ns-resize' },
-  { id: 'ne', style: { top: -5, right: -5 },                             cursor: 'nesw-resize' },
-  { id: 'e',  style: { top: '50%', right: -5, transform: 'translateY(-50%)' }, cursor: 'ew-resize' },
-  { id: 'se', style: { bottom: -5, right: -5 },                          cursor: 'nwse-resize' },
-  { id: 's',  style: { bottom: -5, left: '50%', transform: 'translateX(-50%)' }, cursor: 'ns-resize' },
-  { id: 'sw', style: { bottom: -5, left: -5 },                           cursor: 'nesw-resize' },
-  { id: 'w',  style: { top: '50%', left: -5, transform: 'translateY(-50%)' },  cursor: 'ew-resize' },
+  { id: 'nw', style: { top: -5, left: -5 }, cursor: 'nwse-resize' },
+  { id: 'n', style: { top: -5, left: '50%', transform: 'translateX(-50%)' }, cursor: 'ns-resize' },
+  { id: 'ne', style: { top: -5, right: -5 }, cursor: 'nesw-resize' },
+  { id: 'e', style: { top: '50%', right: -5, transform: 'translateY(-50%)' }, cursor: 'ew-resize' },
+  { id: 'se', style: { bottom: -5, right: -5 }, cursor: 'nwse-resize' },
+  { id: 's', style: { bottom: -5, left: '50%', transform: 'translateX(-50%)' }, cursor: 'ns-resize' },
+  { id: 'sw', style: { bottom: -5, left: -5 }, cursor: 'nesw-resize' },
+  { id: 'w', style: { top: '50%', left: -5, transform: 'translateY(-50%)' }, cursor: 'ew-resize' },
 ]
 
 const HANDLE_SIZE = 10
@@ -77,6 +78,8 @@ export function SelectionBox({
     e.stopPropagation()
     e.preventDefault()
 
+    useSlidesStore.getState().saveHistorySnapshot()
+
     const startX = e.clientX
     const startY = e.clientY
     const original = { ...rect }
@@ -84,7 +87,7 @@ export function SelectionBox({
 
     const onMove = (ev: PointerEvent) => {
       const shiftHeld = ev.shiftKey
-      const altHeld   = ev.altKey
+      const altHeld = ev.altKey
 
       // Convert from screen px → canvas px by dividing by the CSS scale factor.
       const dx = (ev.clientX - startX) / canvasScale
@@ -92,7 +95,7 @@ export function SelectionBox({
 
       const opts: ResizeOptions = {
         lockAspect: isImage || shiftHeld,
-        fromCenter:  altHeld,
+        fromCenter: altHeld,
         minWidth: 20,
         minHeight: 20,
       }
@@ -114,11 +117,13 @@ export function SelectionBox({
     e.stopPropagation()
     e.preventDefault()
 
+    useSlidesStore.getState().saveHistorySnapshot()
+
     if (!boxRef.current) return
     const boxEl = boxRef.current
     const boxRect = boxEl.getBoundingClientRect()
-    const cx = boxRect.left + boxRect.width  / 2
-    const cy = boxRect.top  + boxRect.height / 2
+    const cx = boxRect.left + boxRect.width / 2
+    const cy = boxRect.top + boxRect.height / 2
 
     const onMove = (ev: PointerEvent) => {
       const angle = Math.atan2(ev.clientY - cy, ev.clientX - cx) * (180 / Math.PI) + 90
@@ -142,9 +147,9 @@ export function SelectionBox({
       ref={boxRef}
       className="absolute pointer-events-none"
       style={{
-        left:   rect.x - 1,
-        top:    rect.y - 1,
-        width:  rect.width  + 2,
+        left: rect.x - 1,
+        top: rect.y - 1,
+        width: rect.width + 2,
         height: rect.height + 2,
         transform: rotation ? `rotate(${rotation}deg)` : undefined,
         transformOrigin: 'center center',
@@ -157,9 +162,9 @@ export function SelectionBox({
       <div
         className="absolute pointer-events-none"
         style={{
-          left:   '50%',
-          top:    -ROTATION_HANDLE_OFFSET,
-          width:  1,
+          left: '50%',
+          top: -ROTATION_HANDLE_OFFSET,
+          width: 1,
           height: ROTATION_HANDLE_OFFSET,
           background: '#3b82f6',
           transform: 'translateX(-50%)',
@@ -172,16 +177,16 @@ export function SelectionBox({
         className="absolute pointer-events-auto"
         onPointerDown={handleRotatePointerDown}
         style={{
-          left:         '50%',
-          top:          -(ROTATION_HANDLE_OFFSET + HANDLE_SIZE),
-          transform:    'translateX(-50%)',
-          width:        HANDLE_SIZE + 2,
-          height:       HANDLE_SIZE + 2,
+          left: '50%',
+          top: -(ROTATION_HANDLE_OFFSET + HANDLE_SIZE),
+          transform: 'translateX(-50%)',
+          width: HANDLE_SIZE + 2,
+          height: HANDLE_SIZE + 2,
           borderRadius: '50%',
-          background:   '#ffffff',
-          border:       '2px solid #3b82f6',
-          cursor:       'crosshair',
-          boxShadow:    '0 1px 4px rgba(0,0,0,0.2)',
+          background: '#ffffff',
+          border: '2px solid #3b82f6',
+          cursor: 'crosshair',
+          boxShadow: '0 1px 4px rgba(0,0,0,0.2)',
         }}
       />
 
@@ -192,13 +197,13 @@ export function SelectionBox({
           className="absolute pointer-events-auto"
           style={{
             ...h.style,
-            width:        HANDLE_SIZE,
-            height:       HANDLE_SIZE,
+            width: HANDLE_SIZE,
+            height: HANDLE_SIZE,
             borderRadius: 2,
-            background:   '#ffffff',
-            border:       '2px solid #3b82f6',
-            cursor:       h.cursor,
-            boxShadow:    '0 1px 3px rgba(0,0,0,0.25)',
+            background: '#ffffff',
+            border: '2px solid #3b82f6',
+            cursor: h.cursor,
+            boxShadow: '0 1px 3px rgba(0,0,0,0.25)',
           }}
           onPointerDown={e => handleResizePointerDown(e, h.id)}
         />

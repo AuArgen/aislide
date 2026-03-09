@@ -7,6 +7,7 @@
 
 import { useEffect } from 'react'
 import { useSlidesStore } from '@/store/slidesStore'
+import { useEditorStore } from '@/store/editorStore'
 
 export function useSlideHotkeys() {
   const { activeSlideId, addSlide, deleteSlide, duplicateSlide, undo, redo, slides } = useSlidesStore()
@@ -49,8 +50,11 @@ export function useSlideHotkeys() {
 
       // Backspace / Delete — Delete active slide
       if ((e.key === 'Backspace' || e.key === 'Delete') && slides.length > 1) {
-        e.preventDefault()
-        deleteSlide(activeSlideId)
+        const { selectedIds } = useEditorStore.getState()
+        if (selectedIds.length === 0) {
+          e.preventDefault()
+          deleteSlide(activeSlideId)
+        }
       }
     }
 
