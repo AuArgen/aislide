@@ -269,8 +269,7 @@ export const useSlidesStore = create<SlidesState>((set, get) => {
       set(s => {
         const slides = [...s.slides]
         const [removed] = slides.splice(fromIndex, 1)
-        const realTo = toIndex > fromIndex ? toIndex - 1 : toIndex
-        slides.splice(realTo, 0, removed)
+        slides.splice(toIndex, 0, removed)
         return { slides, history: newHistory, future: [] }
       })
     },

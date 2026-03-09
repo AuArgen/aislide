@@ -58,17 +58,27 @@ export function SlideSidebarPanel({
         pointerYRef.current = mv.clientY
         if (!listRef.current) return
         const items = listRef.current.querySelectorAll<HTMLDivElement>('[data-slide-item]')
-        let best = slides.length
+
+        let hoverIndex = idx;
         items.forEach((item, i) => {
           const { top, height } = item.getBoundingClientRect()
-          if (mv.clientY < top + height / 2) { best = Math.min(best, i) }
+          // Midpoint approach works, but let's just find the exact item the pointer is over
+          // Or just threshold using the center of each item
+          if (mv.clientY >= top && mv.clientY <= top + height) {
+            hoverIndex = i;
+          }
         })
-        setDrag(d => d ? { ...d, overIndex: best } : d)
+
+        setDrag(d => d ? { ...d, overIndex: hoverIndex } : d)
       }
 
       const onUp = () => {
         setDrag(d => {
-          if (d) reorderSlides(d.draggingIndex, d.overIndex)
+          if (d && d.draggingIndex !== d.overIndex) {
+            setTimeout(() => {
+              reorderSlides(d.draggingIndex, d.overIndex)
+            }, 0)
+          }
           return null
         })
         if (rafRef.current) { cancelAnimationFrame(rafRef.current); rafRef.current = null }
@@ -191,13 +201,14 @@ export function SlideSidebarPanel({
         className="flex-1 overflow-y-auto p-2.5"
       >
         {slides.map((slide, i) => {
-          const showDropAbove = drag !== null && drag.overIndex === i && drag.draggingIndex !== i
-          const showDropBelow = drag !== null && drag.overIndex === slides.length && i === slides.length - 1
+          const isOver = drag !== null && drag.overIndex === i && drag.draggingIndex !== i
+          const movingDown = isOver && drag!.draggingIndex < i
+          const movingUp = isOver && drag!.draggingIndex > i
 
           return (
             <div key={slide.id} data-slide-item className="mb-2">
               {/* ── Drop indicator above ── */}
-              {showDropAbove && (
+              {movingUp && (
                 <div className="h-0.5 w-full bg-blue-500 rounded-full mb-1.5 shadow-sm shadow-blue-400" />
               )}
 
@@ -213,8 +224,8 @@ export function SlideSidebarPanel({
                 onDragHandlePointerDown={e => handleDragHandlePointerDown(e, i)}
               />
 
-              {/* ── Drop indicator after last ── */}
-              {showDropBelow && (
+              {/* ── Drop indicator below ── */}
+              {movingDown && (
                 <div className="h-0.5 w-full bg-blue-500 rounded-full mt-1.5 shadow-sm shadow-blue-400" />
               )}
             </div>
