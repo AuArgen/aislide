@@ -723,10 +723,13 @@ function PresentationEditorInner({
   const handleExport = async (type: 'pptx' | 'pdf' | 'png') => {
     setIsExporting(true)
     try {
-      if (type === 'pptx') await exportToPPTX(initialPresentation.title, slides.map(s => ({ title: s.title, content: s.elements.map(e => ('content' in e ? e.content : '')).join('\n'), image: s.image })))
-      else if (type === 'pdf') await exportToPDF('slide-canvas', initialPresentation.title)
-      else await exportToImage('slide-canvas', initialPresentation.title)
-    } catch (e) { console.error(e) }
+      if (type === 'pptx') await exportToPPTX(initialPresentation.title, slides)
+      else if (type === 'pdf') await exportToPDF('export-container', initialPresentation.title, slides.length)
+      else await exportToImage('export-container', initialPresentation.title, slides.length)
+    } catch (e: any) {
+      console.error(e)
+      alert(`Экспорттоо катасы: ${e.message || 'Белгисиз ката'}`)
+    }
     finally { setIsExporting(false) }
   }
 
@@ -1493,6 +1496,43 @@ function PresentationEditorInner({
           )}
         </>
       )}
+
+      {/* ── Hidden Export Container (1:1 scale, all slides) ── */}
+      <div
+        id="export-container"
+        className="fixed top-0 left-0 pointer-events-none opacity-0 flex flex-col"
+        style={{ zIndex: -9999 }}
+      >
+        {slides.map((slide, index) => (
+          <div
+            key={slide.id}
+            id={`export-slide-${index}`}
+            className="relative overflow-hidden shrink-0"
+            style={{
+              width: CANVAS_W,
+              height: CANVAS_H,
+              ...buildSlideStyle(slide),
+              fontFamily: slide.style?.fontFamily || 'Inter, sans-serif'
+            }}
+          >
+            {slide.elements.map(el => (
+              <ElementWrapper
+                key={el.id}
+                element={el}
+                isSelected={false}
+                isMultiSelected={false}
+                onSelect={() => { }}
+                onUpdate={() => { }}
+                onRemove={() => { }}
+                otherRects={[]}
+                canvasW={CANVAS_W}
+                canvasH={CANVAS_H}
+                onSnapGuides={() => { }}
+              />
+            ))}
+          </div>
+        ))}
+      </div>
     </div>
   )
 }

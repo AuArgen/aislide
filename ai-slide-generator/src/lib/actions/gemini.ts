@@ -33,9 +33,9 @@ export async function generateAndSavePresentation(userId: string, prompt: string
   }
 }
 
-export async function generateOutlineAction(prompt: string, slideCount: number = 5, tone: string = 'business', audience: string = 'General') {
+export async function generateOutlineAction(prompt: string, slideCount: number = 5, tone: string = 'business', audience: string = 'General', customApiKey?: string) {
   try {
-    const outline = await generateOutline(prompt, slideCount, tone, audience)
+    const outline = await generateOutline(prompt, slideCount, tone, audience, customApiKey)
     return { success: true, data: outline }
   } catch (error: any) {
     console.error('Outline Action Error:', error)
@@ -43,9 +43,9 @@ export async function generateOutlineAction(prompt: string, slideCount: number =
   }
 }
 
-export async function generateSingleSlideAction(outlineItem: any, colorTheme: string) {
+export async function generateSingleSlideAction(outlineItem: any, colorTheme: string, customApiKey?: string) {
   try {
-    const slide = await generateSingleSlide(outlineItem, colorTheme)
+    const slide = await generateSingleSlide(outlineItem, colorTheme, customApiKey)
     return { success: true, data: slide }
   } catch (error: any) {
     console.error('Single Slide Action Error:', error)

@@ -40,7 +40,8 @@ export function getRoleLimits(role: UserRole | string): UserLimit {
 /**
  * Checks if a user can create another presentation based on their current count.
  */
-export function canCreatePresentation(currentCount: number, role: UserRole | string): boolean {
-    const { maxPresentations } = getRoleLimits(role);
-    return currentCount < maxPresentations;
+export function canCreatePresentation(currentCount: number, role: UserRole | string, hasCustomApiKey: boolean = false): boolean {
+    if (hasCustomApiKey) return true
+    const { maxPresentations } = getRoleLimits(role)
+    return currentCount < maxPresentations
 }

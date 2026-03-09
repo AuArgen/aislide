@@ -79,7 +79,7 @@ export async function getUserPresentations(userId: string) {
   return data.map(normalizePresentationData)
 }
 
-export async function createPresentation(userId: string, title: string, slides: any, theme: string = 'default') {
+export async function createPresentation(userId: string, title: string, slides: any, theme: string = 'default', hasCustomApiKey: boolean = false) {
   // 1. Get user role
   const { data: userData, error: userError } = await supabase
     .from('users')
@@ -103,12 +103,14 @@ export async function createPresentation(userId: string, title: string, slides: 
     return { success: false, error: 'Could not verify limits' }
   }
 
-  // 3. Check limits
-  const { maxPresentations, label } = getRoleLimits((userData as any).role)
-  if (count !== null && count >= maxPresentations) {
-    return {
-      success: false,
-      error: `Лимит ашылды. Сиздин тариф (${label}) боюнча максимум ${maxPresentations} презентация түзүүгө болот.`
+  // 3. Check limits (skip if custom API key is used)
+  if (!hasCustomApiKey) {
+    const { maxPresentations, label } = getRoleLimits((userData as any).role)
+    if (count !== null && count >= maxPresentations) {
+      return {
+        success: false,
+        error: `Лимит ашылды. Сиздин тариф (${label}) боюнча максимум ${maxPresentations} презентация түзүүгө болот.`
+      }
     }
   }
 

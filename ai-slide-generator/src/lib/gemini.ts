@@ -23,8 +23,8 @@ async function withRetry<T>(fn: () => Promise<T>, maxRetries: number = 3, initia
   throw lastError
 }
 
-export async function generateSlides(prompt: string, slideCount: number = 5, tone: string = 'business') {
-  let apiKey = await getSettingByKey('GEMINI_API_KEY')
+export async function generateSlides(prompt: string, slideCount: number = 5, tone: string = 'business', customApiKey?: string) {
+  let apiKey = customApiKey || await getSettingByKey('GEMINI_API_KEY')
 
   if (!apiKey) {
     apiKey = process.env.GEMINI_API_KEY
@@ -165,12 +165,16 @@ JSON Structure (verify all x, y, width values fit within the 1920x1080 grid!):
       throw new Error('Өтө көп суроо-талап жөнөтүлдү (Rate Limit). Сураныч, бир аздан кийин кайра аракет кылыңыз.')
     }
 
+    if (error.status === 403 || error.status === 400 || error.message?.includes('API_KEY') || error.message?.includes('invalid') || error.message?.includes('not found')) {
+      throw new Error('Сиздин API Key жараксыз же иштебейт. Сураныч, текшерип кайра көрүңүз.')
+    }
+
     throw new Error('Презентация мазмунун түзүүдө ката кетти: ' + (error.message || 'Белгисиз ката'))
   }
 }
 
-export async function generateOutline(prompt: string, slideCount: number = 5, tone: string = 'business', audience: string = 'General') {
-  let apiKey = await getSettingByKey('GEMINI_API_KEY')
+export async function generateOutline(prompt: string, slideCount: number = 5, tone: string = 'business', audience: string = 'General', customApiKey?: string) {
+  let apiKey = customApiKey || await getSettingByKey('GEMINI_API_KEY')
   if (!apiKey) apiKey = process.env.GEMINI_API_KEY
   if (!apiKey) throw new Error('Gemini API key is not configured in settings or environment variables')
 
@@ -230,12 +234,15 @@ Return ONLY the following JSON array format, with absolutely no additional text 
     return JSON.parse(cleanJson)
   } catch (error: any) {
     console.error('Gemini API Error (Outline):', error)
+    if (error.status === 403 || error.status === 400 || error.message?.includes('API_KEY') || error.message?.includes('invalid') || error.message?.includes('not found')) {
+      throw new Error('Сиздин API Key жараксыз же иштебейт. Сураныч, текшерип кайра көрүңүз.')
+    }
     throw new Error('Презентациянын планын түзүүдө ката кетти: ' + (error.message || 'Белгисиз ката'))
   }
 }
 
-export async function generateSingleSlide(outlineItem: any, colorTheme: string) {
-  let apiKey = await getSettingByKey('GEMINI_API_KEY')
+export async function generateSingleSlide(outlineItem: any, colorTheme: string, customApiKey?: string) {
+  let apiKey = customApiKey || await getSettingByKey('GEMINI_API_KEY')
   if (!apiKey) apiKey = process.env.GEMINI_API_KEY
   if (!apiKey) throw new Error('Gemini API key is not configured in settings or environment variables')
 
@@ -314,6 +321,9 @@ Return ONLY raw JSON. Do NOT include markdown formatting like \`\`\`json.
     console.error('Gemini API Error (Single Slide):', error)
     if (error.status === 429 || error.message?.includes('429')) {
       throw new Error('Өтө көп суроо-талап жөнөтүлдү (Rate Limit). Сураныч, бир аздан кийин кайра аракет кылыңыз.')
+    }
+    if (error.status === 403 || error.status === 400 || error.message?.includes('API_KEY') || error.message?.includes('invalid') || error.message?.includes('not found')) {
+      throw new Error('Сиздин API Key жараксыз же иштебейт. Сураныч, текшерип кайра көрүңүз.')
     }
     throw new Error('Слайдды түзүүдө ката кетти: ' + (error.message || 'Белгисиз ката'))
   }
