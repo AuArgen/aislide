@@ -71,7 +71,7 @@ export async function textAiAction(text: string, mode: TextAiMode): Promise<{ su
     if (!apiKey) return { success: false, error: 'Gemini API key is not configured' }
 
     const genAI = new GoogleGenerativeAI(apiKey)
-    const model = genAI.getGenerativeModel({ model: 'gemini-2.5-pro' })
+    const model = genAI.getGenerativeModel({ model: 'gemini-2.5-flash' })
 
     const prompt = `${TEXT_AI_PROMPTS[mode]}\n\nТекст:\n${text}`
     const result = await model.generateContent(prompt)

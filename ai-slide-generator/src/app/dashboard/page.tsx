@@ -2,6 +2,7 @@ import Link from 'next/link'
 import { getCurrentSession, getUserByGoogleId } from '@/lib/auth/auth-helpers'
 import { getUserSubscription, getUserPresentations } from '@/lib/actions/user'
 import { PresentationForm } from '@/components/user/PresentationForm'
+import { DeletePresentationButton } from '@/components/user/DeletePresentationButton'
 
 export default async function DashboardPage() {
   const session = await getCurrentSession()
@@ -82,18 +83,27 @@ export default async function DashboardPage() {
               ) : (
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   {(presentations as any[]).map((p: any) => (
-                    <Link
+                    <div
                       key={p.id}
-                      href={`/editor/${p.id}`}
-                      className="p-6 bg-white border border-gray-100 rounded-2xl shadow-sm hover:shadow-md transition-all group"
+                      className="relative p-6 bg-white border border-gray-100 rounded-2xl shadow-sm hover:shadow-md transition-all group min-h-[140px] flex flex-col justify-between"
                     >
-                      <h4 className="font-bold text-gray-900 group-hover:text-blue-600 transition-colors mb-2">
-                        {p.title}
-                      </h4>
-                      <p className="text-xs text-gray-400">
-                        {new Date(p.created_at).toLocaleDateString('ky-KG')}
-                      </p>
-                    </Link>
+                      <Link href={`/editor/${p.id}`} className="absolute inset-0 z-0"></Link>
+
+                      <div className="relative z-10 pointer-events-none mb-4">
+                        <h4 className="font-bold text-gray-900 group-hover:text-blue-600 transition-colors mb-2 pr-8">
+                          {p.title}
+                        </h4>
+                        <div className="flex items-center gap-2 text-xs text-gray-400">
+                          <span>{new Date(p.created_at).toLocaleDateString('ky-KG')}</span>
+                          <span className="w-1 h-1 rounded-full bg-gray-300"></span>
+                          <span>{p.slides?.length || 0} слайд</span>
+                        </div>
+                      </div>
+
+                      <div className="absolute top-4 right-4 z-10">
+                        <DeletePresentationButton id={p.id} />
+                      </div>
+                    </div>
                   ))}
                 </div>
               )}

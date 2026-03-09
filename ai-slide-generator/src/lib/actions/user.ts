@@ -9,7 +9,7 @@ import { getRoleLimits } from '@/lib/auth/limits'
  */
 function normalizePresentationData(pres: any) {
   if (!pres || !Array.isArray(pres.slides)) return pres;
-  
+
   // 1. Detect if this is a legacy percentage-based presentation
   // If ANY coordinate or dimension in ANY element across ALL slides is > 100,
   // we safely assume it is ALREADY using absolute pixels.
@@ -18,9 +18,9 @@ function normalizePresentationData(pres: any) {
     if (!Array.isArray(slide.elements)) continue;
     for (const el of slide.elements) {
       if ((el.x !== undefined && el.x > 100) ||
-          (el.y !== undefined && el.y > 100) ||
-          (el.width !== undefined && el.width > 100) ||
-          (el.height !== undefined && el.height > 100)) {
+        (el.y !== undefined && el.y > 100) ||
+        (el.width !== undefined && el.width > 100) ||
+        (el.height !== undefined && el.height > 100)) {
         isLegacy = false;
         break;
       }
@@ -158,5 +158,22 @@ export async function updatePresentation(id: string, updates: any) {
     return { success: false, error: error.message }
   }
 
+  return { success: true }
+}
+
+import { revalidatePath } from 'next/cache'
+
+export async function deletePresentation(id: string) {
+  const { error } = await supabase
+    .from('presentations')
+    .delete()
+    .eq('id', id)
+
+  if (error) {
+    console.error('Error deleting presentation:', error)
+    return { success: false, error: error.message }
+  }
+
+  revalidatePath('/dashboard')
   return { success: true }
 }

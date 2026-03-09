@@ -35,7 +35,7 @@ export async function generateSlides(prompt: string, slideCount: number = 5, ton
   }
 
   const genAI = new GoogleGenerativeAI(apiKey)
-  const model = genAI.getGenerativeModel({ model: 'gemini-2.5-pro' }) // Using pro for better structural understanding
+  const model = genAI.getGenerativeModel({ model: 'gemini-2.5-flash' }) // Using pro for better structural understanding
 
   const toneInstructions: Record<string, string> = {
     'business': 'Professional, clear, and business-oriented. Use appropriate terminology.',
@@ -47,6 +47,23 @@ export async function generateSlides(prompt: string, slideCount: number = 5, ton
   const selectedTone = toneInstructions[tone] || toneInstructions['business']
 
   const systemPrompt = `
+================================================================================
+CRITICAL LANGUAGE RULE - READ THIS FIRST!
+================================================================================
+You MUST identify the language of the user's input topic (prompt).
+You MUST generate 100% of the slide content (titles, subtitles, bullet points, body text, core messages, conclusions) in that EXACT SAME LANGUAGE.
+- If the user writes in Kyrgyz (Кыргызча), output in Kyrgyz.
+- If the user writes in Russian (Русский), output in Russian.
+- If the user writes in English, output in English.
+- If the user writes in ANY other language, output in THAT language.
+
+FORBIDDEN: 
+- DO NOT translate the user's topic into English.
+- DO NOT default to English.
+- DO NOT switch languages mid-presentation.
+LANGUAGE SWITCHING IS A CRITICAL FAILURE. Any deviation from the detected input language will result in incorrect output.
+================================================================================
+
 You are a world-class professional presentation designer and content writer.
 Create a visually stunning, highly structured, DEEPLY INFORMATIVE, and DETAILED presentation based on the user's topic.
 
@@ -92,7 +109,6 @@ PRESENTATION STRUCTURE:
 
 Total slides required: ${slideCount}.
 Tone: ${selectedTone}
-Language: Strictly match the language of the user's prompt (topic). Ensure grammatical accuracy!
 
 Return ONLY raw JSON. Do NOT include markdown formatting like \`\`\`json.
 
@@ -159,7 +175,7 @@ export async function generateOutline(prompt: string, slideCount: number = 5, to
   if (!apiKey) throw new Error('Gemini API key is not configured in settings or environment variables')
 
   const genAI = new GoogleGenerativeAI(apiKey)
-  const model = genAI.getGenerativeModel({ model: 'gemini-2.5-pro' })
+  const model = genAI.getGenerativeModel({ model: 'gemini-2.5-flash' })
 
   const toneInstructions: Record<string, string> = {
     'business': 'Professional, clear, and business-oriented.',
@@ -170,6 +186,23 @@ export async function generateOutline(prompt: string, slideCount: number = 5, to
   const selectedTone = toneInstructions[tone] || toneInstructions['business']
 
   const systemPrompt = `
+================================================================================
+CRITICAL LANGUAGE RULE - READ THIS FIRST!
+================================================================================
+You MUST identify the language of the user's input topic (${prompt}).
+You MUST generate 100% of the outline content (slide titles, core messages) in that EXACT SAME LANGUAGE.
+- If the user writes in Kyrgyz (Кыргызча), output in Kyrgyz.
+- If the user writes in Russian (Русский), output in Russian.
+- If the user writes in English, output in English.
+- If the user writes in ANY other language, output in THAT language.
+
+FORBIDDEN: 
+- DO NOT translate the user's topic into English.
+- DO NOT default to English.
+- DO NOT switch languages in the outline.
+LANGUAGE SWITCHING IS A CRITICAL FAILURE. Any deviation from the detected input language will result in incorrect output.
+================================================================================
+
 You are a world-class professional presentation designer.
 Create ONLY the structure (outline) for a presentation based on the user's topic.
 
@@ -177,7 +210,6 @@ TOPIC: ${prompt}
 NUMBER OF SLIDES: ${slideCount}
 AUDIENCE: ${audience}
 STYLE/TONE: ${selectedTone}
-LANGUAGE: You MUST formulate the outline in the EXACT SAME LANGUAGE as the user's TOPIC prompt. Do not force Kyrgyz if the user wrote in English or Russian.
 
 Return ONLY the following JSON array format, with absolutely no additional text or markdown formatting:
 [
@@ -208,9 +240,26 @@ export async function generateSingleSlide(outlineItem: any, colorTheme: string) 
   if (!apiKey) throw new Error('Gemini API key is not configured in settings or environment variables')
 
   const genAI = new GoogleGenerativeAI(apiKey)
-  const model = genAI.getGenerativeModel({ model: 'gemini-2.5-pro' })
+  const model = genAI.getGenerativeModel({ model: 'gemini-2.5-flash' })
 
   const systemPrompt = `
+================================================================================
+CRITICAL LANGUAGE RULE - READ THIS FIRST!
+================================================================================
+You MUST identify the language of the provided slide outline (${outlineItem.title} and ${outlineItem.coreMessage}).
+You MUST generate 100% of the slide content (title, bullet points, body text) in that EXACT SAME LANGUAGE.
+- If the outline is in Kyrgyz (Кыргызча), output in Kyrgyz.
+- If the outline is in Russian (Русский), output in Russian.
+- If the outline is in English, output in English.
+- If the outline is in ANY other language, output in THAT language.
+
+FORBIDDEN: 
+- DO NOT translate the slide content into English.
+- DO NOT default to English.
+- DO NOT switch languages in the slide content.
+LANGUAGE SWITCHING IS A CRITICAL FAILURE. Any deviation from the detected input language will result in incorrect output.
+================================================================================
+
 You are a world-class professional presentation designer and content writer.
 Based on the following outline information, create the full visual and content structure for EXACTLY ONE slide.
 
@@ -221,11 +270,6 @@ Visual Suggestion: ${outlineItem.suggestedVisual}
 
 COLOR THEME: ${colorTheme}
 (Select an appropriate 'background' and 'titleColor' fitting this theme).
-
-CONTENT LANGUAGE: 
-You MUST generate the slide content in the EXACT SAME LANGUAGE as the Provided Slide Outline.
-ABSOLUTELY NO MARKDOWN FORMATTING IN TEXT CONTENT: 
-Do NOT use \`**\` for bold or \`*\` for italics inside the \`content\` string. If you want text to be bold, set the \`fontWeight: "bold"\` property instead.
 
 DESIGN AND STRICT COORDINATE RULES (PAY CLOSE ATTENTION):
 The standard slide dimension is WIDTH: 1920px and HEIGHT: 1080px.
