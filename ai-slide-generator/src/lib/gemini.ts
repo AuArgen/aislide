@@ -1,5 +1,6 @@
 import { GoogleGenerativeAI } from '@google/generative-ai'
 import { getSettingByKey } from '@/lib/actions/settings'
+import { GEMINI_LAYOUTS } from './geminiLayouts'
 
 async function withRetry<T>(fn: () => Promise<T>, maxRetries: number = 3, initialDelay: number = 1000): Promise<T> {
   let lastError: any
@@ -24,6 +25,7 @@ async function withRetry<T>(fn: () => Promise<T>, maxRetries: number = 3, initia
 }
 
 export async function generateSlides(prompt: string, slideCount: number = 5, tone: string = 'business', customApiKey?: string) {
+  const startTime = performance.now()
   let apiKey = customApiKey || await getSettingByKey('GEMINI_API_KEY')
 
   if (!apiKey) {
@@ -46,6 +48,36 @@ export async function generateSlides(prompt: string, slideCount: number = 5, ton
 
   const selectedTone = toneInstructions[tone] || toneInstructions['business']
 
+  // Select dynamic layouts
+  const titleLayouts = GEMINI_LAYOUTS.filter(l => l.id.startsWith('title_'))
+  const contentLayouts = GEMINI_LAYOUTS.filter(l => l.id.startsWith('content_'))
+  const conclusionLayouts = GEMINI_LAYOUTS.filter(l => l.id.startsWith('conclusion_'))
+
+  // Always 1 title, 1 conclusion, and the rest are random content blocks
+  const selectedLayouts = []
+
+  // 1. Title Slide
+  selectedLayouts.push(titleLayouts[Math.floor(Math.random() * titleLayouts.length)])
+
+  // 2. Content Slides
+  const neededContent = Math.max(1, slideCount - 2)
+  for (let i = 0; i < neededContent; i++) {
+    selectedLayouts.push(contentLayouts[Math.floor(Math.random() * contentLayouts.length)])
+  }
+
+  // 3. Conclusion Slide
+  if (slideCount > 1) {
+    selectedLayouts.push(conclusionLayouts[Math.floor(Math.random() * conclusionLayouts.length)])
+  }
+
+  // Stringify the chosen templates for the prompt
+  const templatesString = JSON.stringify(selectedLayouts.map((l, index) => ({
+    slideNumber: index + 1,
+    layoutName: l.name,
+    purpose: l.description,
+    elements: l.elements
+  })), null, 2)
+
   const systemPrompt = `
 ================================================================================
 CRITICAL LANGUAGE RULE - READ THIS FIRST!
@@ -61,88 +93,50 @@ FORBIDDEN:
 - DO NOT translate the user's topic into English.
 - DO NOT default to English.
 - DO NOT switch languages mid-presentation.
-LANGUAGE SWITCHING IS A CRITICAL FAILURE. Any deviation from the detected input language will result in incorrect output.
 ================================================================================
 
 You are a world-class professional presentation designer and content writer.
-Create a visually stunning, highly structured, DEEPLY INFORMATIVE, and DETAILED presentation based on the user's topic.
+Create a visually stunning, DEEPLY INFORMATIVE, and DETAILED presentation based on the user's topic: "${prompt}".
 
 CRITICAL CONTENT RULE:
-- DO NOT write short, generic text. Use statistics, facts, code snippets (if the topic is programming), and concrete examples extensively.
+- DO NOT write short, generic text. Use statistics, facts, code snippets (if programming), and concrete examples extensively.
 - Every slide must be extremely rich in information. Avoid empty or sparse slides. 
-- You MUST generate ALL content (title, slide titles, text, bullet points) in the EXACT SAME LANGUAGE as the user's topic prompt. 
-- For example, if the user writes in Kyrgyz, output the presentation in Kyrgyz. If in Russian, output in Russian. If in English, output in English.
 - ABSOLUTELY NO MARKDOWN FORMATTING IN TEXT CONTENT! Do NOT use \`**\` for bold or \`*\` for italics inside the \`content\` string. If you want text to be bold, set the \`fontWeight: "bold"\` property instead.
 
-DESIGN RULES:
-- Use a different background for each slide — avoid monotony.
-- The first slide (title slide) should be gorgeous, ideally using a beautiful gradient background.
-- Text color must contrast strongly with the background (light text on dark background, dark text on light background).
-- Logical element placement: Title at the top, followed by bullet points cascading downwards.
-- Elements must be spaced out (e.g., at least 150 pixels gap between y-coordinates).
-- Do not place text too close to the edges (x should be at least 150, max 1600).
+================================================================================
+STRICT TEMPLATE FILLING RULES (CRITICAL)
+================================================================================
+I am providing you with EXACTLY ${slideCount} mathematically perfect, predefined JSON slide templates below.
+You MUST output EXACTLY the same JSON structure I provided, but you must REPLACE ALL strings that look like "[FILL: ...]" with actual, rich presentation content.
 
-STRICT COORDINATE RULES (MUST BE FOLLOWED!):
-The standard slide dimension is WIDTH: 1920px and HEIGHT: 1080px.
-ALL coordinates and dimensions (x, y, width, height) MUST be based on this 1920x1080 pixel grid and provided as absolute integers (pixels). NEVER use percentages (0-100)!
-- x: 0-1920 (pixels). For text, start 150-200 pixels from the left edge (e.g., x: 150).
-- y: 0-1080 (pixels). First element 150-200px from top, subsequent ones +100-150px downwards.
-- width: 0-1920 (pixels). For main text body, use width 1400-1600.
-- align: "left", "center", or "right".
-- fontWeight: "normal" or "bold".
-- fontSize: in pixels (main text 28-36, bullet point titles 36-48, main titles 64-96).
+- You MUST KEEP the exact geometric coordinates ("x", "y", "width", "height", "fontSize", "borderRadius") and structural "type" to ensure the layout remains perfect.
+- You CAN and SHOULD modify the "color", "fill", and "iconName" properties dynamically to decorate the slide contextually!
+- When changing colors, you MUST use the "Modern Dark Tech" palette:
+  - Text: "#FFFFFF" (titles/highlights) or "#A0A0A0" (descriptions).
+  - Accents/Fills/Icons: Use "#4ECDC4" (Cyan for tech/info), "#4ADE80" (Emerald Green for success/tips), "#F59E0B" (Orange for warnings/activity), or "#EC4899" (Pink for negative/alerts).
+  - Card Backgrounds: Keep them "#1E1E1E" or "#2A2A2A".
+- ONLY modify the \`content\` field of "text" and "code" elements, prioritizing deep, insightful details.
+- For "icon" elements, change the \`iconName\` field to a standard Lucide icon name (e.g., "TrendingUp", "Shield", "Database", "Layers", "Code") that perfectly matches your text.
+- You MUST use the exact background color "#121212" for ALL slides to match the aesthetic.
 
-BACKGROUND EXAMPLES (choose from these or invent new ones):
-- Light: "#ffffff", "#f8fafc", "#f0f9ff"
-- Dark: "#0f172a", "#1e293b", "#111827"
-- Warm Gradient: "linear-gradient(135deg, #f093fb 0%, #f5576c 100%)"
-- Ice/Blue: "linear-gradient(135deg, #667eea 0%, #764ba2 100%)"
-- Green: "linear-gradient(135deg, #11998e 0%, #38ef7d 100%)"
-- Ocean: "linear-gradient(135deg, #4facfe 0%, #00f2fe 100%)"
-- Gold: "linear-gradient(135deg, #f6d365 0%, #fda085 100%)"
-- Sunset: "linear-gradient(135deg, #fa709a 0%, #fee140 100%)"
-
-PRESENTATION STRUCTURE:
-1. First slide: Title slide — main title, short subtitle/annotation, beautiful background.
-2. Main body slides (${slideCount - 2} slides): Deep information, specific statistics, code examples, or step-by-step processes. Avoid sparse slides. Each slide MUST have at least 2-3 significant content blocks/bullets.
-3. Last slide: Main takeaways, recommendations, and conclusion.
+HERE ARE YOUR STRICT JSON TEMPLATES TO FILL:
+${templatesString}
 
 Total slides required: ${slideCount}.
 Tone: ${selectedTone}
 
 Return ONLY raw JSON. Do NOT include markdown formatting like \`\`\`json.
 
-JSON Structure (verify all x, y, width values fit within the 1920x1080 grid!):
+JSON Structure:
 {
   "title": "Main Presentation Title",
   "slides": [
     {
       "title": "Slide Title",
-      "background": "linear-gradient(135deg, #667eea 0%, #764ba2 100%)",
+      "background": "#0f172a",
       "titleColor": "#ffffff",
       "elements": [
-        {
-          "type": "text",
-          "content": "• First bullet point with deep detail",
-          "x": 150,
-          "y": 200,
-          "width": 1400,
-          "fontSize": 36,
-          "color": "#ffffff",
-          "align": "left",
-          "fontWeight": "normal"
-        },
-        {
-          "type": "text",
-          "content": "• Second bullet point with deep detail",
-          "x": 150,
-          "y": 350,
-          "width": 1400,
-          "fontSize": 36,
-          "color": "#ffffff",
-          "align": "left",
-          "fontWeight": "normal"
-        }
+        // Exact elements array from the template, with [FILL: ...] replaced by your excellent content
       ],
       "visual_hint": "image description/search term"
     }
@@ -150,30 +144,67 @@ JSON Structure (verify all x, y, width values fit within the 1920x1080 grid!):
 }
   `
 
+  let totalTokens = 0
+  let inputTokens = 0
+  let outputTokens = 0
+  
   try {
     const result = await withRetry(() => model.generateContent([systemPrompt, prompt]))
     const response = await result.response
+    
+    inputTokens = response.usageMetadata?.promptTokenCount || 0
+    outputTokens = response.usageMetadata?.candidatesTokenCount || 0
+    totalTokens = response.usageMetadata?.totalTokenCount || 0
+    
     const text = response.text()
+    
+    const durationMs = performance.now() - startTime
+    
+    const costUsd = (inputTokens / 1000000) * 0.075 + (outputTokens / 1000000) * 0.30
 
     // JSON тазалоо
     const cleanJson = text.replace(/```json|```/gi, '').trim()
-    return JSON.parse(cleanJson)
+    const content = JSON.parse(cleanJson)
+    
+    return {
+      content,
+      metadata: {
+        rawResponse: text,
+        tokensUsed: totalTokens,
+        costUsd,
+        durationMs: Math.round(durationMs)
+      }
+    }
   } catch (error: any) {
     console.error('Gemini API Error:', error)
+    
+    // Calculate tracked cost so far (if API returned usageMetadata before failing in inner steps or subsequent retries)
+    const costUsd = (inputTokens / 1000000) * 0.075 + (outputTokens / 1000000) * 0.30
+    const durationMs = performance.now() - startTime
 
     if (error.status === 429 || error.message?.includes('429')) {
-      throw new Error('Өтө көп суроо-талап жөнөтүлдү (Rate Limit). Сураныч, бир аздан кийин кайра аракет кылыңыз.')
+      throw new Error(JSON.stringify({ 
+        message: 'Өтө көп суроо-талап жөнөтүлдү (Rate Limit). Сураныч, бир аздан кийин кайра аракет кылыңыз.',
+        partialMetadata: { tokensUsed: totalTokens, costUsd, durationMs: Math.round(durationMs) }
+      }))
     }
 
     if (error.status === 403 || error.status === 400 || error.message?.includes('API_KEY') || error.message?.includes('invalid') || error.message?.includes('not found')) {
-      throw new Error('Сиздин API Key жараксыз же иштебейт. Сураныч, текшерип кайра көрүңүз.')
+      throw new Error(JSON.stringify({
+        message: 'Сиздин API Key жараксыз же иштебейт. Сураныч, текшерип кайра көрүңүз.',
+        partialMetadata: { tokensUsed: totalTokens, costUsd, durationMs: Math.round(durationMs) }
+      }))
     }
 
-    throw new Error('Презентация мазмунун түзүүдө ката кетти: ' + (error.message || 'Белгисиз ката'))
+    throw new Error(JSON.stringify({
+      message: 'Презентация мазмунун түзүүдө ката кетти: ' + (error.message || 'Белгисиз ката'),
+      partialMetadata: { tokensUsed: totalTokens, costUsd, durationMs: Math.round(durationMs) }
+    }))
   }
 }
 
 export async function generateOutline(prompt: string, slideCount: number = 5, tone: string = 'business', audience: string = 'General', customApiKey?: string) {
+  const startTime = performance.now()
   let apiKey = customApiKey || await getSettingByKey('GEMINI_API_KEY')
   if (!apiKey) apiKey = process.env.GEMINI_API_KEY
   if (!apiKey) throw new Error('Gemini API key is not configured in settings or environment variables')
@@ -226,22 +257,62 @@ Return ONLY the following JSON array format, with absolutely no additional text 
 ]
 `
 
+  let inputTokens = 0
+  let outputTokens = 0
+  let totalTokens = 0
+  
   try {
     const result = await withRetry(() => model.generateContent(systemPrompt))
     const response = await result.response
     const text = response.text()
+    
+    const durationMs = performance.now() - startTime
+    
+    inputTokens = response.usageMetadata?.promptTokenCount || 0
+    outputTokens = response.usageMetadata?.candidatesTokenCount || 0
+    totalTokens = response.usageMetadata?.totalTokenCount || 0
+    const costUsd = (inputTokens / 1000000) * 0.075 + (outputTokens / 1000000) * 0.30
+
     const cleanJson = text.replace(/```json|```/gi, '').trim()
-    return JSON.parse(cleanJson)
+    const content = JSON.parse(cleanJson)
+    
+    return {
+      content,
+      metadata: {
+        rawResponse: text,
+        tokensUsed: totalTokens,
+        costUsd,
+        durationMs: Math.round(durationMs)
+      }
+    }
   } catch (error: any) {
     console.error('Gemini API Error (Outline):', error)
-    if (error.status === 403 || error.status === 400 || error.message?.includes('API_KEY') || error.message?.includes('invalid') || error.message?.includes('not found')) {
-      throw new Error('Сиздин API Key жараксыз же иштебейт. Сураныч, текшерип кайра көрүңүз.')
+    const costUsd = (inputTokens / 1000000) * 0.075 + (outputTokens / 1000000) * 0.30
+    const durationMs = performance.now() - startTime
+
+    if (error.status === 429 || error.message?.includes('429')) {
+      throw new Error(JSON.stringify({ 
+        message: 'Өтө көп суроо-талап жөнөтүлдү (Rate Limit). Сураныч, бир аздан кийин кайра аракет кылыңыз.',
+        partialMetadata: { tokensUsed: totalTokens, costUsd, durationMs: Math.round(durationMs) }
+      }))
     }
-    throw new Error('Презентациянын планын түзүүдө ката кетти: ' + (error.message || 'Белгисиз ката'))
+
+    if (error.status === 403 || error.status === 400 || error.message?.includes('API_KEY') || error.message?.includes('invalid') || error.message?.includes('not found')) {
+      throw new Error(JSON.stringify({
+        message: 'Сиздин API Key жараксыз же иштебейт. Сураныч, текшерип кайра көрүңүз.',
+        partialMetadata: { tokensUsed: totalTokens, costUsd, durationMs: Math.round(durationMs) }
+      }))
+    }
+
+    throw new Error(JSON.stringify({
+      message: 'Презентациянын планын түзүүдө ката кетти: ' + (error.message || 'Белгисиз ката'),
+      partialMetadata: { tokensUsed: totalTokens, costUsd, durationMs: Math.round(durationMs) }
+    }))
   }
 }
 
 export async function generateSingleSlide(outlineItem: any, colorTheme: string, customApiKey?: string) {
+  const startTime = performance.now()
   let apiKey = customApiKey || await getSettingByKey('GEMINI_API_KEY')
   if (!apiKey) apiKey = process.env.GEMINI_API_KEY
   if (!apiKey) throw new Error('Gemini API key is not configured in settings or environment variables')
@@ -311,20 +382,56 @@ Return ONLY raw JSON. Do NOT include markdown formatting like \`\`\`json.
 }
 `
 
+  let totalTokens = 0
+  let inputTokens = 0
+  let outputTokens = 0
+
   try {
     const result = await withRetry(() => model.generateContent(systemPrompt))
     const response = await result.response
+    
+    inputTokens = response.usageMetadata?.promptTokenCount || 0
+    outputTokens = response.usageMetadata?.candidatesTokenCount || 0
+    totalTokens = response.usageMetadata?.totalTokenCount || 0
+    
     const text = response.text()
+    
+    const durationMs = performance.now() - startTime
+    const costUsd = (inputTokens / 1000000) * 0.075 + (outputTokens / 1000000) * 0.30
+
     const cleanJson = text.replace(/```json|```/gi, '').trim()
-    return JSON.parse(cleanJson)
+    const content = JSON.parse(cleanJson)
+    
+    return {
+      content,
+      metadata: {
+        rawResponse: text,
+        tokensUsed: totalTokens,
+        costUsd,
+        durationMs: Math.round(durationMs)
+      }
+    }
   } catch (error: any) {
     console.error('Gemini API Error (Single Slide):', error)
+    
+    const costUsd = (inputTokens / 1000000) * 0.075 + (outputTokens / 1000000) * 0.30
+    const durationMs = performance.now() - startTime
+
     if (error.status === 429 || error.message?.includes('429')) {
-      throw new Error('Өтө көп суроо-талап жөнөтүлдү (Rate Limit). Сураныч, бир аздан кийин кайра аракет кылыңыз.')
+      throw new Error(JSON.stringify({ 
+        message: 'Өтө көп суроо-талап жөнөтүлдү (Rate Limit). Сураныч, бир аздан кийин кайра аракет кылыңыз.',
+        partialMetadata: { tokensUsed: totalTokens, costUsd, durationMs: Math.round(durationMs) }
+      }))
     }
     if (error.status === 403 || error.status === 400 || error.message?.includes('API_KEY') || error.message?.includes('invalid') || error.message?.includes('not found')) {
-      throw new Error('Сиздин API Key жараксыз же иштебейт. Сураныч, текшерип кайра көрүңүз.')
+      throw new Error(JSON.stringify({
+        message: 'Сиздин API Key жараксыз же иштебейт. Сураныч, текшерип кайра көрүңүз.',
+        partialMetadata: { tokensUsed: totalTokens, costUsd, durationMs: Math.round(durationMs) }
+      }))
     }
-    throw new Error('Слайдды түзүүдө ката кетти: ' + (error.message || 'Белгисиз ката'))
+    throw new Error(JSON.stringify({
+      message: 'Слайдды түзүүдө ката кетти: ' + (error.message || 'Белгисиз ката'),
+      partialMetadata: { tokensUsed: totalTokens, costUsd, durationMs: Math.round(durationMs) }
+    }))
   }
 }

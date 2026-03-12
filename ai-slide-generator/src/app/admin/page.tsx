@@ -1,6 +1,8 @@
 import { redirect } from 'next/navigation'
 import { getCurrentSession } from '@/lib/auth/auth-helpers'
 import { createClient } from '@/lib/supabase/server'
+import Link from 'next/link'
+import { Activity } from 'lucide-react'
 
 export default async function AdminPage() {
   const session = await getCurrentSession()
@@ -44,9 +46,23 @@ export default async function AdminPage() {
         </div>
       </div>
 
-      <div className="bg-white border border-gray-200 rounded-lg p-6">
-        <h2 className="font-semibold mb-4">Настройкалар</h2>
-        <p className="text-sm text-gray-500">Бул жерден системалык параметрлерди өзгөртө аласыз.</p>
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        <div className="bg-white border border-gray-200 rounded-lg p-6">
+          <h2 className="font-semibold mb-4">Настройкалар</h2>
+          <p className="text-sm text-gray-500 mb-4">Бул жерден системалык параметрлерди өзгөртө аласыз.</p>
+          <Link href="/admin/settings" className="text-indigo-600 hover:text-indigo-500 text-sm font-medium">Көбүрөөк →</Link>
+        </div>
+
+        <div className="bg-white border border-gray-200 rounded-lg p-6 flex flex-col items-start">
+          <div className="p-2 bg-purple-100 rounded-lg text-purple-600 mb-4">
+            <Activity className="w-6 h-6" />
+          </div>
+          <h2 className="font-semibold mb-2">AI Метрикасы (Logs)</h2>
+          <p className="text-sm text-gray-500 mb-4 flex-1">
+            Gemini генерацияларынын тарыхын, сурамдарды, кеткен убакытты, токендерди жана чыгымды (USD) көзөмөлдөңүз.
+          </p>
+          <Link href="/admin/logs" className="text-purple-600 hover:text-purple-500 text-sm font-medium">Ачуу →</Link>
+        </div>
       </div>
     </div>
   )

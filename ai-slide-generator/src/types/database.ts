@@ -154,6 +154,41 @@ export interface Database {
           created_at?: string
         }
       }
+      ai_logs: {
+        Row: {
+          id: string
+          user_id: string
+          presentation_id: string | null
+          prompt: string
+          response: string
+          tokens_used: number
+          cost_usd: number
+          duration_ms: number
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          user_id: string
+          presentation_id?: string | null
+          prompt: string
+          response: string
+          tokens_used: number
+          cost_usd: number
+          duration_ms: number
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          user_id?: string
+          presentation_id?: string | null
+          prompt?: string
+          response?: string
+          tokens_used?: number
+          cost_usd?: number
+          duration_ms?: number
+          created_at?: string
+        }
+      }
     }
   }
 }

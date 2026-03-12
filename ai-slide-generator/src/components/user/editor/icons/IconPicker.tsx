@@ -8,7 +8,7 @@ import type { IconElement } from '@/types/elements'
 // Build a list of all icon names from lucide-react
 const ALL_ICON_NAMES = Object.keys(LucideIcons).filter(name => {
   const comp = (LucideIcons as Record<string, unknown>)[name]
-  return typeof comp === 'function' && name !== 'createLucideIcon' && /^[A-Z]/.test(name)
+  return (typeof comp === 'function' || typeof comp === 'object') && name !== 'createLucideIcon' && /^[A-Z]/.test(name)
 })
 
 interface IconPickerProps {
