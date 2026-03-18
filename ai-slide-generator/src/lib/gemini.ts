@@ -1,6 +1,20 @@
 import { GoogleGenerativeAI } from '@google/generative-ai'
 import { getSettingByKey } from '@/lib/actions/settings'
 import { GEMINI_LAYOUTS } from './geminiLayouts'
+import { Json } from '@/types/database'
+
+export interface AiResponse<T> {
+  content: T
+  metadata: {
+    rawResponse: string
+    fullPrompt: string
+    clientPrompt: string
+    isValid: boolean
+    tokensUsed: number
+    costUsd: number
+    durationMs: number
+  }
+}
 
 async function withRetry<T>(fn: () => Promise<T>, maxRetries: number = 3, initialDelay: number = 1000): Promise<T> {
   let lastError: any
@@ -24,7 +38,7 @@ async function withRetry<T>(fn: () => Promise<T>, maxRetries: number = 3, initia
   throw lastError
 }
 
-export async function generateSlides(prompt: string, slideCount: number = 5, tone: string = 'business', customApiKey?: string) {
+export async function generateSlides(prompt: string, slideCount: number = 5, tone: string = 'business', customApiKey?: string): Promise<AiResponse<any>> {
   const startTime = performance.now()
   let apiKey = customApiKey || await getSettingByKey('GEMINI_API_KEY')
 
@@ -164,12 +178,26 @@ JSON Structure:
 
     // JSON тазалоо
     const cleanJson = text.replace(/```json|```/gi, '').trim()
-    const content = JSON.parse(cleanJson)
+    let content: any = null
+    let isValid = false
+
+    try {
+      content = JSON.parse(cleanJson)
+      // Слайддар мазмунун текшерүү
+      if (content && typeof content === 'object' && content.title && Array.isArray(content.slides)) {
+        isValid = true
+      }
+    } catch (e) {
+      console.error('Failed to parse Gemini response as JSON:', e)
+    }
     
     return {
       content,
       metadata: {
         rawResponse: text,
+        fullPrompt: `${systemPrompt}\n\nUSER PROMPT: ${prompt}`,
+        clientPrompt: prompt,
+        isValid,
         tokensUsed: totalTokens,
         costUsd,
         durationMs: Math.round(durationMs)
@@ -203,7 +231,7 @@ JSON Structure:
   }
 }
 
-export async function generateOutline(prompt: string, slideCount: number = 5, tone: string = 'business', audience: string = 'General', customApiKey?: string) {
+export async function generateOutline(prompt: string, slideCount: number = 5, tone: string = 'business', audience: string = 'General', customApiKey?: string): Promise<AiResponse<any>> {
   const startTime = performance.now()
   let apiKey = customApiKey || await getSettingByKey('GEMINI_API_KEY')
   if (!apiKey) apiKey = process.env.GEMINI_API_KEY
@@ -273,13 +301,27 @@ Return ONLY the following JSON array format, with absolutely no additional text 
     totalTokens = response.usageMetadata?.totalTokenCount || 0
     const costUsd = (inputTokens / 1000000) * 0.075 + (outputTokens / 1000000) * 0.30
 
+    // JSON тазалоо
     const cleanJson = text.replace(/```json|```/gi, '').trim()
-    const content = JSON.parse(cleanJson)
+    let content: any = null
+    let isValid = false
+
+    try {
+      content = JSON.parse(cleanJson)
+      if (Array.isArray(content)) {
+        isValid = true
+      }
+    } catch (e) {
+      console.error('Failed to parse Gemini outline response as JSON:', e)
+    }
     
     return {
       content,
       metadata: {
         rawResponse: text,
+        fullPrompt: systemPrompt,
+        clientPrompt: prompt,
+        isValid,
         tokensUsed: totalTokens,
         costUsd,
         durationMs: Math.round(durationMs)
@@ -311,7 +353,7 @@ Return ONLY the following JSON array format, with absolutely no additional text 
   }
 }
 
-export async function generateSingleSlide(outlineItem: any, colorTheme: string, customApiKey?: string) {
+export async function generateSingleSlide(outlineItem: any, colorTheme: string, customApiKey?: string): Promise<AiResponse<any>> {
   const startTime = performance.now()
   let apiKey = customApiKey || await getSettingByKey('GEMINI_API_KEY')
   if (!apiKey) apiKey = process.env.GEMINI_API_KEY
@@ -319,6 +361,10 @@ export async function generateSingleSlide(outlineItem: any, colorTheme: string, 
 
   const genAI = new GoogleGenerativeAI(apiKey)
   const model = genAI.getGenerativeModel({ model: 'gemini-2.5-flash' })
+
+  // Select a random content layout
+  const contentLayouts = GEMINI_LAYOUTS.filter(l => l.id.startsWith('content_'))
+  const selectedLayout = contentLayouts[Math.floor(Math.random() * contentLayouts.length)]
 
   const systemPrompt = `
 ================================================================================
@@ -335,7 +381,6 @@ FORBIDDEN:
 - DO NOT translate the slide content into English.
 - DO NOT default to English.
 - DO NOT switch languages in the slide content.
-LANGUAGE SWITCHING IS A CRITICAL FAILURE. Any deviation from the detected input language will result in incorrect output.
 ================================================================================
 
 You are a world-class professional presentation designer and content writer.
@@ -347,38 +392,35 @@ Core Message: ${outlineItem.coreMessage}
 Visual Suggestion: ${outlineItem.suggestedVisual}
 
 COLOR THEME: ${colorTheme}
-(Select an appropriate 'background' and 'titleColor' fitting this theme).
 
-DESIGN AND STRICT COORDINATE RULES (PAY CLOSE ATTENTION):
-The standard slide dimension is WIDTH: 1920px and HEIGHT: 1080px.
-ALL coordinates and dimensions (x, y, width, height) MUST be based on this 1920x1080 pixel grid and provided as absolute integers (pixels). NEVER use percentages (0-100)!
-- x: 0-1920. For text, start 150-200 pixels from the left edge.
-- y: 0-1080. First element 150-200px from top, subsequent ones downwards. Space out bullet points (at least 100-150px gap).
-- width: 0-1920. For main text body, use width 1400-1600.
-- align: "left", "center", or "right".
-- fontWeight: "normal" or "bold".
-- fontSize: in pixels (main text 28-36, bullet titles 36-48, large main titles 64-96).
-- color: Text color MUST contrast well with the chosen background.
+================================================================================
+STRICT TEMPLATE FILLING RULES (CRITICAL)
+================================================================================
+You MUST use the following EXACT JSON template for this slide.
+TEMPLATE NAME: ${selectedLayout.name}
+TEMPLATE STRUCTURE:
+${JSON.stringify(selectedLayout.elements, null, 2)}
+
+DIRECTIONS:
+1. REPLACE ALL strings that look like "[FILL: ...]" with actual, rich presentation content.
+2. DO NOT change "x", "y", "width", "height", "fontSize", or "type" properties.
+3. You CAN and SHOULD update "color", "fill", and "iconName" properties!
+4. For "icon" elements, use standard Lucide icon names (e.g., "Cpu", "Activity", "Shield", "Zap", "Globe") that fit the content.
+5. Colors MUST follow the "Modern Dark Tech" palette:
+   - Text Titles: "#FFFFFF"
+   - Text Details: "#A0A0A0"
+   - Accent Fills/Icons: "#4ECDC4" (Cyan), "#4ADE80" (Green), "#F59E0B" (Orange), or "#EC4899" (Pink).
+   - Background: Always use "#121212" (unless the template specifies a Different background).
 
 Return ONLY raw JSON. Do NOT include markdown formatting like \`\`\`json.
 {
-  "title": "\${outlineItem.title}",
-  "background": "Background (e.g. hex #0f172a, or linear-gradient)",
+  "title": "${outlineItem.title}",
+  "background": "#121212",
   "titleColor": "#ffffff",
   "elements": [
-    {
-      "type": "text",
-      "content": "• Slide content (detailed bullet point)",
-      "x": 150,
-      "y": 200,
-      "width": 1400,
-      "fontSize": 36,
-      "color": "#ffffff",
-      "align": "left",
-      "fontWeight": "normal"
-    }
+    // EXACT elements array from the template, with [FILL: ...] replaced by your excellent content
   ],
-  "visual_hint": "\${outlineItem.suggestedVisual}"
+  "visual_hint": "${outlineItem.suggestedVisual}"
 }
 `
 
@@ -399,13 +441,27 @@ Return ONLY raw JSON. Do NOT include markdown formatting like \`\`\`json.
     const durationMs = performance.now() - startTime
     const costUsd = (inputTokens / 1000000) * 0.075 + (outputTokens / 1000000) * 0.30
 
+    // JSON тазалоо
     const cleanJson = text.replace(/```json|```/gi, '').trim()
-    const content = JSON.parse(cleanJson)
+    let content: any = null
+    let isValid = false
+
+    try {
+      content = JSON.parse(cleanJson)
+      if (content && typeof content === 'object' && content.title && Array.isArray(content.elements)) {
+        isValid = true
+      }
+    } catch (e) {
+      console.error('Failed to parse Gemini single slide response as JSON:', e)
+    }
     
     return {
       content,
       metadata: {
         rawResponse: text,
+        fullPrompt: systemPrompt,
+        clientPrompt: outlineItem.title,
+        isValid,
         tokensUsed: totalTokens,
         costUsd,
         durationMs: Math.round(durationMs)

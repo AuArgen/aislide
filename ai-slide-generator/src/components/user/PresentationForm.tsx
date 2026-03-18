@@ -14,7 +14,7 @@ interface PresentationFormProps {
 
 export function PresentationForm({ userId, canGenerate }: PresentationFormProps) {
   const [prompt, setPrompt] = useState('')
-  const [slideCount, setSlideCount] = useState(5)
+  const [slideCount, setSlideCount] = useState<number | string>(5)
   const [tone, setTone] = useState('business')
   const [targetAudience, setTargetAudience] = useState('General')
   const [colorTheme, setColorTheme] = useState('Modern Dark')
@@ -51,7 +51,8 @@ export function PresentationForm({ userId, canGenerate }: PresentationFormProps)
 
     try {
       // Phase 1: Generate Outline
-      const outlineResult = await generateOutlineAction(prompt, slideCount, tone, targetAudience, customApiKey || undefined)
+      const finalSlideCount = typeof slideCount === 'number' ? slideCount : 5
+      const outlineResult = await generateOutlineAction(prompt, finalSlideCount, tone, targetAudience, customApiKey || undefined)
       if (!outlineResult.success || !outlineResult.data) {
         throw new Error(outlineResult.error || 'План түзүүдө ката кетти')
       }
@@ -134,7 +135,17 @@ export function PresentationForm({ userId, canGenerate }: PresentationFormProps)
               min="3"
               max="15"
               value={slideCount}
-              onChange={(e) => setSlideCount(parseInt(e.target.value))}
+              onChange={(e) => {
+                const val = e.target.value
+                if (val === '') {
+                  setSlideCount('')
+                  return
+                }
+                const parsed = parseInt(val)
+                if (!isNaN(parsed)) {
+                  setSlideCount(parsed)
+                }
+              }}
               className="w-full px-4 py-2 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none"
               disabled={isGenerating}
             />

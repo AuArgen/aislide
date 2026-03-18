@@ -5,15 +5,23 @@ import { generateSlides, generateOutline, generateSingleSlide } from '@/lib/gemi
 import { createPresentation } from '@/lib/actions/user'
 import { getSettingByKey } from '@/lib/actions/settings'
 import { revalidatePath } from 'next/cache'
-import { saveAiLog } from '@/lib/actions/logs'
+import { saveAiLog, updateAiLog } from '@/lib/actions/logs'
 import { getCurrentSession } from '@/lib/auth/auth-helpers'
 
 export async function generateAndSavePresentation(userId: string, prompt: string, slideCount: number = 5, tone: string = 'business') {
+  // 1. Create initial log
+  const logId = await saveAiLog({
+    user_id: userId,
+    prompt: `Generate presentation: ${prompt}`,
+    client_prompt: prompt,
+    is_valid: false
+  })
+
   try {
-    // 1. Generate content using Gemini
+    // 2. Generate content using Gemini
     const { content: presentationContent, metadata } = await generateSlides(prompt, slideCount, tone)
 
-    // 2. Save to database
+    // 3. Save to database
     const result = await createPresentation(
       userId,
       presentationContent.title || prompt,
@@ -24,20 +32,30 @@ export async function generateAndSavePresentation(userId: string, prompt: string
     const successResult = result as { success: true; data: any }
 
     if (successResult.success && successResult.data) {
-      await saveAiLog({
-        user_id: userId,
-        presentation_id: successResult.data.id,
-        prompt: prompt,
-        response: metadata.rawResponse,
-        tokens_used: metadata.tokensUsed,
-        cost_usd: Number(metadata.costUsd.toFixed(6)),
-        duration_ms: metadata.durationMs
-      })
+      // 4. Update log with full details
+      if (logId) {
+        await updateAiLog(logId, {
+          presentation_id: successResult.data.id,
+          full_prompt: metadata.fullPrompt,
+          is_valid: metadata.isValid,
+          response: metadata.rawResponse,
+          tokens_used: metadata.tokensUsed,
+          cost_usd: Number(metadata.costUsd.toFixed(6)),
+          duration_ms: metadata.durationMs
+        })
+      }
 
       revalidatePath('/dashboard')
       return { success: true, id: successResult.data.id }
     } else {
-      return { success: false, error: (result as any).error }
+      const errorStr = (result as any).error || 'Failed to save presentation'
+      if (logId) {
+        await updateAiLog(logId, {
+          response: `Error: ${errorStr}`,
+          is_valid: false
+        })
+      }
+      return { success: false, error: errorStr }
     }
   } catch (error: any) {
     console.error('Action Error:', error)
@@ -51,31 +69,41 @@ export async function generateAndSavePresentation(userId: string, prompt: string
       partialMetadata = errObj.partialMetadata
     } catch (e) {}
 
-    // Ар дайым логко жазуу (токен жок болсо дагы)
-    await saveAiLog({
-      user_id: userId,
-      presentation_id: null,
-      prompt: `[ERROR] ${prompt.substring(0, 150)}`,
-      response: `Error: ${errorMessage}`,
-      tokens_used: partialMetadata?.tokensUsed || 0,
-      cost_usd: Number((partialMetadata?.costUsd || 0).toFixed(6)),
-      duration_ms: partialMetadata?.durationMs || 0
-    }).catch(err => console.error('Failed to save error log:', err))
+    // Ар дайым логту жаңыртуу (ката болсо дагы)
+    if (logId) {
+      await updateAiLog(logId, {
+        response: `Error: ${errorMessage}`,
+        is_valid: false,
+        tokens_used: partialMetadata?.tokensUsed || 0,
+        cost_usd: Number((partialMetadata?.costUsd || 0).toFixed(6)),
+        duration_ms: partialMetadata?.durationMs || 0
+      }).catch(err => console.error('Failed to update error log:', err))
+    }
 
     return { success: false, error: errorMessage }
   }
 }
 
 export async function generateOutlineAction(prompt: string, slideCount: number = 5, tone: string = 'business', audience: string = 'General', customApiKey?: string) {
+  const session = await getCurrentSession()
+  let logId: string | null = null
+
+  if (session) {
+    logId = await saveAiLog({
+      user_id: session.user.id,
+      prompt: `Generate outline: ${prompt}`,
+      client_prompt: prompt,
+      is_valid: false
+    })
+  }
+
   try {
-    const session = await getCurrentSession()
     const { content: outline, metadata } = await generateOutline(prompt, slideCount, tone, audience, customApiKey)
     
-    if (session) {
-      await saveAiLog({
-        user_id: session.user.id,
-        presentation_id: null,
-        prompt: `Generate outline: ${prompt}`,
+    if (logId) {
+      await updateAiLog(logId, {
+        full_prompt: metadata.fullPrompt,
+        is_valid: metadata.isValid,
         response: metadata.rawResponse,
         tokens_used: metadata.tokensUsed,
         cost_usd: Number(metadata.costUsd.toFixed(6)),
@@ -96,17 +124,14 @@ export async function generateOutlineAction(prompt: string, slideCount: number =
       partialMetadata = errObj.partialMetadata
     } catch (e) {}
 
-    const session = await getCurrentSession()
-    if (session) {
-      await saveAiLog({
-        user_id: session.user.id,
-        presentation_id: null,
-        prompt: `[ERROR Outline] ${prompt.substring(0, 150)}`,
+    if (logId) {
+      await updateAiLog(logId, {
         response: `Error: ${errorMessage}`,
+        is_valid: false,
         tokens_used: partialMetadata?.tokensUsed || 0,
         cost_usd: Number((partialMetadata?.costUsd || 0).toFixed(6)),
         duration_ms: partialMetadata?.durationMs || 0
-      }).catch(err => console.error('Failed to save error log for outline:', err))
+      }).catch(err => console.error('Failed to update error log for outline:', err))
     }
 
     return { success: false, error: errorMessage }
@@ -114,15 +139,25 @@ export async function generateOutlineAction(prompt: string, slideCount: number =
 }
 
 export async function generateSingleSlideAction(outlineItem: any, colorTheme: string, customApiKey?: string) {
+  const session = await getCurrentSession()
+  let logId: string | null = null
+
+  if (session) {
+    logId = await saveAiLog({
+      user_id: session.user.id,
+      prompt: `Generate single slide: ${outlineItem.title}`,
+      client_prompt: outlineItem.title + ': ' + outlineItem.coreMessage,
+      is_valid: false
+    })
+  }
+
   try {
-    const session = await getCurrentSession()
     const { content: slide, metadata } = await generateSingleSlide(outlineItem, colorTheme, customApiKey)
     
-    if (session) {
-      await saveAiLog({
-        user_id: session.user.id,
-        presentation_id: null,
-        prompt: `Generate single slide: ${outlineItem.title}`,
+    if (logId) {
+      await updateAiLog(logId, {
+        full_prompt: metadata.fullPrompt,
+        is_valid: metadata.isValid,
         response: metadata.rawResponse,
         tokens_used: metadata.tokensUsed,
         cost_usd: Number(metadata.costUsd.toFixed(6)),
@@ -143,17 +178,14 @@ export async function generateSingleSlideAction(outlineItem: any, colorTheme: st
       partialMetadata = errObj.partialMetadata
     } catch (e) {}
 
-    const session = await getCurrentSession()
-    if (session) {
-      await saveAiLog({
-        user_id: session.user.id,
-        presentation_id: null, 
-        prompt: `[ERROR SingleSlide] ${outlineItem.title}`,
+    if (logId) {
+      await updateAiLog(logId, {
         response: `Error: ${errorMessage}`,
+        is_valid: false,
         tokens_used: partialMetadata?.tokensUsed || 0,
         cost_usd: Number((partialMetadata?.costUsd || 0).toFixed(6)),
         duration_ms: partialMetadata?.durationMs || 0
-      }).catch(err => console.error('Failed to save error log for single slide:', err))
+      }).catch(err => console.error('Failed to update error log for single slide:', err))
     }
 
     return { success: false, error: errorMessage }
@@ -178,6 +210,17 @@ export async function textAiAction(text: string, mode: TextAiMode): Promise<{ su
     if (!apiKey) apiKey = process.env.GEMINI_API_KEY
     if (!apiKey) return { success: false, error: 'Gemini API key is not configured' }
 
+    const session = await getCurrentSession()
+    let logId: string | null = null
+    if (session) {
+      logId = await saveAiLog({
+        user_id: session.user.id,
+        prompt: `Text AI (${mode}): ${text.substring(0, 100)}...`,
+        client_prompt: text,
+        is_valid: true
+      })
+    }
+
     const genAI = new GoogleGenerativeAI(apiKey)
     const model = genAI.getGenerativeModel({ model: 'gemini-2.5-flash' })
 
@@ -192,12 +235,9 @@ export async function textAiAction(text: string, mode: TextAiMode): Promise<{ su
     const totalTokens = response.usageMetadata?.totalTokenCount || 0
     const costUsd = (inputTokens / 1000000) * 0.075 + (outputTokens / 1000000) * 0.30
 
-    const session = await getCurrentSession()
-    if (session) {
-      await saveAiLog({
-        user_id: session.user.id,
-        presentation_id: null,
-        prompt: `Text AI (${mode}): ${text.substring(0, 100)}...`,
+    if (logId) {
+      await updateAiLog(logId, {
+        full_prompt: prompt,
         response: output,
         tokens_used: totalTokens,
         cost_usd: Number(costUsd.toFixed(6)),

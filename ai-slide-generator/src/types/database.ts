@@ -160,7 +160,10 @@ export interface Database {
           user_id: string
           presentation_id: string | null
           prompt: string
+          client_prompt: string | null
+          full_prompt: string | null
           response: string
+          is_valid: boolean
           tokens_used: number
           cost_usd: number
           duration_ms: number
@@ -171,10 +174,13 @@ export interface Database {
           user_id: string
           presentation_id?: string | null
           prompt: string
-          response: string
-          tokens_used: number
-          cost_usd: number
-          duration_ms: number
+          client_prompt?: string | null
+          full_prompt?: string | null
+          response?: string | null
+          is_valid?: boolean
+          tokens_used?: number
+          cost_usd?: number
+          duration_ms?: number
           created_at?: string
         }
         Update: {
@@ -182,7 +188,10 @@ export interface Database {
           user_id?: string
           presentation_id?: string | null
           prompt?: string
+          client_prompt?: string | null
+          full_prompt?: string | null
           response?: string
+          is_valid?: boolean
           tokens_used?: number
           cost_usd?: number
           duration_ms?: number
