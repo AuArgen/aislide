@@ -131,7 +131,12 @@ You MUST output EXACTLY the same JSON structure I provided, but you must REPLACE
   - Card Backgrounds: Keep them "#1E1E1E" or "#2A2A2A".
 - ONLY modify the \`content\` field of "text" and "code" elements, prioritizing deep, insightful details.
 - For "icon" elements, change the \`iconName\` field to a standard Lucide icon name (e.g., "TrendingUp", "Shield", "Database", "Layers", "Code") that perfectly matches your text.
-- You MUST use the exact background color "#121212" for ALL slides to match the aesthetic.
+- For "image" elements, set the \`src\` field to a descriptive English keyword for a stock image search, prefixed with "stock:". 
+  Example: "stock:modern office building", "stock:team working on laptop", "stock:abstract technology background".
+- For "background", you can now use a hex color OR a stock image search query. 
+  If the slide layout benefits from a photo background, set \`background\` to "stock:[descriptive keyword]". 
+  If using an image background, ensure the overlay color and text contrast remain readable.
+- You MUST use the exact background color "#121212" for ALL slides UNLESS you choose to use a stock image background.
 
 HERE ARE YOUR STRICT JSON TEMPLATES TO FILL:
 ${templatesString}

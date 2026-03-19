@@ -113,5 +113,37 @@ export const GEMINI_LAYOUTS: TemplateLayout[] = [
             { type: "shape", x: 710, y: 850, width: 500, height: 80, shapeKind: "rect", fill: "#4ECDC4", borderRadius: 40 },
             { type: "text", x: 710, y: 872, width: 500, fontSize: 22, color: "#121212", fontWeight: "bold", align: "center", content: "[FILL: Call to Action Button Text]" }
         ]
+    },
+
+    // ─── СҮРӨТТҮҮ МАКЕТТЕР (ЖАҢЫ) ───
+    {
+        id: "content_image_left",
+        name: "Image Left, Text Right",
+        description: "Сол жакта чоң сүрөт, оң жакта түшүндүрмө текст.",
+        elements: [
+            { type: "text", x: 1000, y: 150, width: 800, height: 80, fontSize: 48, color: "#FFFFFF", fontWeight: "bold", align: "left", content: "[FILL: Slide Title]" },
+            { type: "image", x: 100, y: 150, width: 850, height: 780, src: "stock:[FILL: relevant image keyword]", borderRadius: 24, objectFit: "cover" },
+            { type: "text", x: 1000, y: 280, width: 800, height: 600, fontSize: 24, color: "#A0A0A0", align: "left", content: "[FILL: Detailed explanation on the right]" }
+        ]
+    },
+    {
+        id: "content_image_right",
+        name: "Text Left, Image Right",
+        description: "Сол жакта текст, оң жакта чоң сүрөт.",
+        elements: [
+            { type: "text", x: 100, y: 150, width: 800, height: 80, fontSize: 48, color: "#FFFFFF", fontWeight: "bold", align: "left", content: "[FILL: Slide Title]" },
+            { type: "image", x: 970, y: 150, width: 850, height: 780, src: "stock:[FILL: relevant image keyword]", borderRadius: 24, objectFit: "cover" },
+            { type: "text", x: 100, y: 280, width: 800, height: 600, fontSize: 24, color: "#A0A0A0", align: "left", content: "[FILL: Detailed explanation on the left]" }
+        ]
+    },
+    {
+        id: "content_full_image_overlay",
+        name: "Full Background Image with Overlay",
+        description: "Толук экрандагы сүрөт жана анын үстүндөгү борборлоштурулган текст.",
+        elements: [
+            // Сүрөт фон катары колдонулат (bg.type = 'image'), бирок бул жерде макеттин түзүмүн көрсөтүү үчүн текстти кошобуз
+            { type: "shape", x: 460, y: 340, width: 1000, height: 400, shapeKind: "rect", fill: "#000000", opacity: 0.6, borderRadius: 24 },
+            { type: "text", x: 510, y: 440, width: 900, height: 200, fontSize: 56, color: "#FFFFFF", fontWeight: "bold", align: "center", content: "[FILL: Powerful center statement]" }
+        ]
     }
 ]

@@ -21,6 +21,40 @@ export async function generateAndSavePresentation(userId: string, prompt: string
     // 2. Generate content using Gemini
     const { content: presentationContent, metadata } = await generateSlides(prompt, slideCount, tone)
 
+    // 2.5 Resolve stock images if any
+    if (presentationContent && presentationContent.slides) {
+      const { getRandomStockImage } = await import('@/lib/images')
+      
+      for (const slide of presentationContent.slides) {
+        // Resolve slide background
+        if (slide.background && slide.background.startsWith('stock:')) {
+          const query = slide.background.replace('stock:', '').trim()
+          const imageUrl = await getRandomStockImage(query)
+          if (imageUrl) {
+            slide.background = imageUrl
+            // Also update the rich bg object if it exists
+            if (slide.bg) {
+              slide.bg.type = 'image'
+              slide.bg.value = imageUrl
+            }
+          }
+        }
+
+        // Resolve element images
+        if (slide.elements) {
+          for (const el of slide.elements) {
+            if (el.type === 'image' && el.src && el.src.startsWith('stock:')) {
+              const query = el.src.replace('stock:', '').trim()
+              const imageUrl = await getRandomStockImage(query)
+              if (imageUrl) {
+                el.src = imageUrl
+              }
+            }
+          }
+        }
+      }
+    }
+
     // 3. Save to database
     const result = await createPresentation(
       userId,
@@ -154,6 +188,33 @@ export async function generateSingleSlideAction(outlineItem: any, colorTheme: st
   try {
     const { content: slide, metadata } = await generateSingleSlide(outlineItem, colorTheme, customApiKey)
     
+    // 2. Resolve stock images if any
+    if (slide) {
+      const { getRandomStockImage } = await import('@/lib/images')
+      
+      // Resolve slide background
+      if (slide.background && slide.background.startsWith('stock:')) {
+        const query = slide.background.replace('stock:', '').trim()
+        const imageUrl = await getRandomStockImage(query)
+        if (imageUrl) {
+          slide.background = imageUrl
+        }
+      }
+
+      // Resolve element images
+      if (slide.elements) {
+        for (const el of slide.elements) {
+          if (el.type === 'image' && el.src && el.src.startsWith('stock:')) {
+            const query = el.src.replace('stock:', '').trim()
+            const imageUrl = await getRandomStockImage(query)
+            if (imageUrl) {
+              el.src = imageUrl
+            }
+          }
+        }
+      }
+    }
+
     if (logId) {
       await updateAiLog(logId, {
         full_prompt: metadata.fullPrompt,
