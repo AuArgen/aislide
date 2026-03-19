@@ -272,6 +272,7 @@ function ElementWrapper({
   return (
     <div
       data-element="true"
+      id={`export-el-${element.id}`}
       className={`absolute rounded-lg border-2 transition-colors ${isSelected
         ? 'border-blue-500 shadow-lg z-30'
         : isMultiSelected

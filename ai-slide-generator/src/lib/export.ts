@@ -19,6 +19,7 @@ const toHex = (color?: string, def = "000000") => {
  */
 export async function exportToPPTX(title: string, slides: Slide[]) {
   const pptx = new pptxgen();
+  const htmlToImage = await import("html-to-image");
 
   // Документтин касиеттери
   pptx.title = title;
@@ -28,7 +29,7 @@ export async function exportToPPTX(title: string, slides: Slide[]) {
   // Force slide size to 16:9 widescreen (10x5.625 inches) strictly
   pptx.layout = "LAYOUT_16x9";
 
-  slides.forEach((slideData) => {
+  for (const slideData of slides) {
     const slide = pptx.addSlide();
 
     // Background handling
@@ -55,8 +56,8 @@ export async function exportToPPTX(title: string, slides: Slide[]) {
     }
 
     // Elements mapping
-    slideData.elements.forEach((el) => {
-      if (el.visible === false) return; // skip hidden
+    for (const el of slideData.elements) {
+      if (el.visible === false) continue; // skip hidden
 
       // CSS pixels to Inches (1920x1080 -> 10x5.625)
       // 1 inch = 192px horizontally and 192px vertically
@@ -78,7 +79,41 @@ export async function exportToPPTX(title: string, slides: Slide[]) {
           italic: el.fontStyle === 'italic',
           underline: el.textDecoration === 'underline' ? { style: "sng" } : undefined,
           valign: 'top',
+          wrap: true,
+          autoFit: true,
         });
+      } else if (el.type === 'code') {
+        // Код блогунун фону
+        slide.addShape(pptx.ShapeType.rect, {
+          x, y, w, h,
+          fill: { color: "1E1E1E" },
+        });
+        // Код тексти
+        slide.addText(el.content, {
+          x: x + 0.1, y: y + 0.1, w: w - 0.2, h: h - 0.2,
+          fontSize: 10,
+          color: "D4D4D4",
+          fontFace: "Courier New",
+          align: 'left',
+          valign: 'top',
+          wrap: true,
+        });
+      } else if (el.type === 'formula' || el.type === 'icon') {
+        // DOM-дон элементти сүрөт катары тартып алуу
+        const elDom = document.getElementById(`export-el-${el.id}`);
+        if (elDom) {
+          try {
+            const imgData = await htmlToImage.toPng(elDom, { pixelRatio: 2 });
+            slide.addImage({
+              path: imgData,
+              x, y, w, h
+            });
+          } catch (err) {
+            console.warn(`Could not capture element ${el.id}:`, err);
+            // Fallback: жөнөкөй текст
+            slide.addText(`[${el.type}]`, { x, y, w, h, fontSize: 12, color: "888888" });
+          }
+        }
       } else if (el.type === 'image') {
         slide.addImage({
           path: el.src,
@@ -98,10 +133,15 @@ export async function exportToPPTX(title: string, slides: Slide[]) {
         else if (el.shapeKind === 'hexagon') shapeType = pptx.ShapeType.hexagon;
         else if (el.shapeKind === 'diamond') shapeType = pptx.ShapeType.diamond;
         else if (el.shapeKind === 'cloud') shapeType = pptx.ShapeType.cloud;
+        else if (el.shapeKind === 'speech-bubble') shapeType = pptx.ShapeType.rect; // Fallback for speech bubble
+
+        const fill = el.fillType === 'gradient'
+          ? { type: 'gradient', color1: toHex(el.fill), color2: toHex(el.fillGradientEnd || "#FFFFFF"), angle: el.fillGradientAngle || 0 }
+          : { color: toHex(el.fill, "CCCCCC") };
 
         const shapeOpts: any = {
           x, y, w, h,
-          fill: { color: toHex(el.fill, "CCCCCC") },
+          fill,
         };
         if (el.stroke && el.strokeWidth) {
           shapeOpts.line = {
@@ -112,7 +152,6 @@ export async function exportToPPTX(title: string, slides: Slide[]) {
         }
 
         if (el.text) {
-          // If shape has text, use addText with shape parameter
           slide.addText(el.text, {
             shape: shapeType,
             ...shapeOpts,
@@ -121,14 +160,16 @@ export async function exportToPPTX(title: string, slides: Slide[]) {
             align: el.textAlign || 'center',
             bold: el.textBold,
             italic: el.textItalic,
-            valign: 'middle'
+            valign: 'middle',
+            wrap: true,
+            autoFit: true,
           });
         } else {
           slide.addShape(shapeType, shapeOpts);
         }
       }
-    });
-  });
+    }
+  }
 
   // Файлды жүктөө
   return pptx.writeFile({ fileName: `${title.replace(/\s+/g, "_")}.pptx` });
