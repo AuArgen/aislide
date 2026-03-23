@@ -70,6 +70,7 @@ export interface ImageElement extends BaseElement {
   type: 'image'
   src: string             // CDN URL or data URL
   alt?: string
+  stockQuery?: string     // Original keyword used for stock search
   maskShape?: MaskShape
   maskImageX?: number     // translate-X of image inside mask (px, relative)
   maskImageY?: number     // translate-Y of image inside mask (px, relative)

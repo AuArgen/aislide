@@ -1,8 +1,13 @@
 'use client'
 
 import { useRef, useState, useId, useCallback } from 'react'
+import {
+  Trash, Check, RefreshCw
+} from 'lucide-react'
 import type { ImageElement, MaskShape } from '@/types/elements'
 import { buildCssFilter } from './ImageEditor'
+import { useResolveStockImage } from '@/lib/hooks/useResolveStockImage'
+import SearchImageModal from './SearchImageModal'
 
 // ── SVG mask shape path definitions ──────────────────────────────────────────
 // All shapes defined in a 100×100 viewBox for easy scaling
@@ -62,6 +67,17 @@ export function ImageMaskCanvas({ element, isSelected, onUpdate }: ImageMaskCanv
   const [repositionMode, setRepositionMode] = useState(false)
   const dragRef = useRef<{ startX: number; startY: number; imgX: number; imgY: number } | null>(null)
   const containerRef = useRef<HTMLDivElement>(null)
+  const [isSearchOpen, setIsSearchOpen] = useState(false)
+
+  // Use the resolution hook and persist the result
+  const handleResolve = useCallback((url: string, query: string) => {
+    onUpdate({ src: url, stockQuery: query } as Partial<ImageElement>)
+  }, [onUpdate])
+
+  const { src: resolvedSrc, isLoading: isResolving } = useResolveStockImage(
+    element.src, 
+    handleResolve
+  )
 
   const w = element.width ?? 300
   const h = element.height ?? 200
@@ -94,111 +110,164 @@ export function ImageMaskCanvas({ element, isSelected, onUpdate }: ImageMaskCanv
     setRepositionMode(r => !r)
   }
 
-  if (maskShape === 'none') {
+  const renderMainContent = () => {
+    if (maskShape === 'none') {
+      return (
+        <div ref={containerRef} className="w-full h-full overflow-hidden relative"
+          style={{ borderRadius: element.borderRadius ?? 0, backgroundColor: imgError || !element.src ? '#e5e7eb' : 'transparent' }}
+          onDoubleClick={handleDoubleClick}
+        >
+          {isSelected && (
+            <button
+              title={element.stockQuery ? "Жаңыртуу (Башка сүрөт)" : "Жаңы сүрөт издөө"}
+              onPointerDown={e => e.stopPropagation()}
+              onClick={e => {
+                e.stopPropagation()
+                setIsSearchOpen(true)
+              }}
+              className="absolute top-2 left-2 w-8 h-8 bg-blue-500/80 hover:bg-blue-600 text-white rounded-full flex items-center justify-center z-50 shadow-lg backdrop-blur-sm transition-transform active:scale-95"
+            >
+              {element.stockQuery ? (
+                <RefreshCw size={14} className={isResolving ? 'animate-spin' : ''} />
+              ) : (
+                <RefreshCw size={14} />
+              )}
+            </button>
+          )}
+
+          {(isResolving || !resolvedSrc || imgError) ? (
+            <div className="w-full h-full flex items-center justify-center text-gray-400 flex-col gap-2">
+              {isResolving ? (
+                <div className="w-5 h-5 border-2 border-blue-500/30 border-t-blue-500 rounded-full animate-spin" />
+              ) : (
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect width="18" height="18" x="3" y="3" rx="2" ry="2" /><circle cx="9" cy="9" r="2" /><path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21" /></svg>
+              )}
+              <span className="text-[10px] font-medium uppercase tracking-wider">
+                {isResolving ? 'Изделүүдө...' : 'Сүрөт жок'}
+              </span>
+            </div>
+          ) : (
+            /* eslint-disable-next-line @next/next/no-img-element */
+            <img
+              src={resolvedSrc}
+              alt={element.alt ?? ''}
+              draggable={false}
+              onError={() => setImgError(true)}
+              onLoad={() => setImgError(false)}
+              className="w-full h-full"
+              style={{ objectFit: element.objectFit ?? 'cover', filter: cssFilter, opacity: element.opacity ?? 1 }}
+            />
+          )}
+        </div>
+      )
+    }
+
+    const imgW = w * imgScale
+    const imgH = h * imgScale
+    const imgOffX = (w - imgW) / 2 + imgX
+    const imgOffY = (h - imgH) / 2 + imgY
+    const maskPath = getMaskPath(maskShape)
+
     return (
-      <div ref={containerRef} className="w-full h-full overflow-hidden relative"
-        style={{ borderRadius: element.borderRadius ?? 0, backgroundColor: imgError || !element.src ? '#e5e7eb' : 'transparent' }}
-        onDoubleClick={handleDoubleClick}
-      >
-        {(!element.src || imgError) ? (
-          <div className="w-full h-full flex items-center justify-center text-gray-400 flex-col gap-2">
-            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect width="18" height="18" x="3" y="3" rx="2" ry="2" /><circle cx="9" cy="9" r="2" /><path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21" /></svg>
-            <span className="text-[10px] font-medium uppercase tracking-wider">Сүрөт жок</span>
-          </div>
-        ) : (
-          /* eslint-disable-next-line @next/next/no-img-element */
-          <img
-            src={element.src}
-            alt={element.alt ?? ''}
-            draggable={false}
-            onError={() => setImgError(true)}
-            onLoad={() => setImgError(false)}
-            className="w-full h-full"
-            style={{ objectFit: element.objectFit ?? 'cover', filter: cssFilter, opacity: element.opacity ?? 1 }}
-          />
+      <div ref={containerRef} className="w-full h-full relative select-none" onDoubleClick={handleDoubleClick}>
+        <svg
+          width={w} height={h}
+          viewBox={`0 0 ${w} ${h}`}
+          style={{ display: 'block', overflowVisible: 'visible' } as React.CSSProperties}
+          onPointerDown={startReposition}
+          onPointerMove={onReposition}
+          onPointerUp={endReposition}
+        >
+          {isSelected && (
+            <foreignObject x="10" y="10" width="40" height="40">
+              <button
+                title={element.stockQuery ? "Жаңыртуу (Башка сүрөт)" : "Жаңы сүрөт издөө"}
+                onPointerDown={e => e.stopPropagation()}
+                onClick={e => {
+                  e.stopPropagation()
+                  setIsSearchOpen(true)
+                }}
+                className="w-8 h-8 bg-blue-500/80 hover:bg-blue-600 text-white rounded-full flex items-center justify-center shadow-lg backdrop-blur-sm transition-transform active:scale-95"
+              >
+                <RefreshCw size={14} className={isResolving ? 'animate-spin' : ''} />
+              </button>
+            </foreignObject>
+          )}
+
+          <defs>
+            <clipPath id={`mask-${maskId}`} clipPathUnits="userSpaceOnUse">
+              <g transform={`scale(${w / 100} ${h / 100})`}>
+                <path d={maskPath} />
+              </g>
+            </clipPath>
+          </defs>
+
+          {(isResolving || !resolvedSrc || imgError) ? (
+            <g clipPath={`url(#mask-${maskId})`}>
+              <rect x="0" y="0" width={w} height={h} fill="#e5e7eb" />
+              {isResolving ? (
+                <g transform={`translate(${w / 2 - 10} ${h / 2 - 10})`}>
+                  <circle cx="10" cy="10" r="8" fill="none" stroke="#3b82f6" strokeWidth="2" strokeDasharray="30" strokeLinecap="round" className="animate-spin" />
+                </g>
+              ) : (
+                <g transform={`translate(${w / 2 - 12} ${h / 2 - 12})`}>
+                  <path fill="none" stroke="#9ca3af" strokeWidth="2" d="M3 3h18v18H3zM9 9a2 2 0 100-4 2 2 0 000 4zm12 6l-3.086-3.086a2 2 0 00-2.828 0L6 21" />
+                </g>
+              )}
+            </g>
+          ) : (
+            <image
+              href={resolvedSrc}
+              x={imgOffX} y={imgOffY}
+              width={imgW} height={imgH}
+              preserveAspectRatio="xMidYMid slice"
+              clipPath={`url(#mask-${maskId})`}
+              onError={() => setImgError(true)}
+              onLoad={() => setImgError(false)}
+              style={{ filter: cssFilter, opacity: element.opacity ?? 1 }}
+            />
+          )}
+
+          <g transform={`scale(${w / 100} ${h / 100})`}>
+            <path
+              d={maskPath}
+              fill="none"
+              stroke={isSelected ? 'rgba(59,130,246,0.6)' : 'none'}
+              strokeWidth={isSelected ? 0.5 : 0}
+            />
+          </g>
+        </svg>
+
+        {repositionMode && (
+          <>
+            <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+              <div className="bg-blue-500/80 text-white text-[10px] font-bold px-2 py-1 rounded-lg backdrop-blur-sm">
+                ↕ Жылдыруу режими — 2× басып чыгыңыз
+              </div>
+            </div>
+            <div className="absolute inset-0 cursor-move"
+              style={{ cursor: 'move' }}
+              onPointerDown={startReposition}
+              onPointerMove={onReposition}
+              onPointerUp={endReposition}
+            />
+          </>
         )}
       </div>
     )
   }
 
-  // ── Render: masked image via SVG clipPath ──────────────────────────────────
-  const svgViewBox = '0 0 100 100'
-  const maskPath = getMaskPath(maskShape)
-  // We scale the image to fill/cover the mask shape
-  const imgW = w * imgScale
-  const imgH = h * imgScale
-  const imgOffX = (w - imgW) / 2 + imgX
-  const imgOffY = (h - imgH) / 2 + imgY
-
   return (
-    <div ref={containerRef} className="w-full h-full relative select-none" onDoubleClick={handleDoubleClick}>
-      <svg
-        width={w} height={h}
-        viewBox={`0 0 ${w} ${h}`}
-        style={{ display: 'block', overflowVisible: 'visible' } as React.CSSProperties}
-        onPointerDown={startReposition}
-        onPointerMove={onReposition}
-        onPointerUp={endReposition}
-      >
-        <defs>
-          {/* Scale the 100×100 path to fill the element dimensions */}
-          <clipPath id={`mask-${maskId}`} clipPathUnits="userSpaceOnUse">
-            <g transform={`scale(${w / 100} ${h / 100})`}>
-              <path d={maskPath} />
-            </g>
-          </clipPath>
-        </defs>
-
-        {/* Clipped image or placeholder */}
-        {(!element.src || imgError) ? (
-          <g clipPath={`url(#mask-${maskId})`}>
-            <rect x="0" y="0" width={w} height={h} fill="#e5e7eb" />
-            {/* Simple broken image icon scaled in centre */}
-            <g transform={`translate(${w / 2 - 12} ${h / 2 - 12})`}>
-              <path fill="none" stroke="#9ca3af" strokeWidth="2" d="M3 3h18v18H3zM9 9a2 2 0 100-4 2 2 0 000 4zm12 6l-3.086-3.086a2 2 0 00-2.828 0L6 21" />
-            </g>
-          </g>
-        ) : (
-          <image
-            href={element.src}
-            x={imgOffX} y={imgOffY}
-            width={imgW} height={imgH}
-            preserveAspectRatio="xMidYMid slice"
-            clipPath={`url(#mask-${maskId})`}
-            onError={() => setImgError(true)}
-            onLoad={() => setImgError(false)}
-            style={{ filter: cssFilter, opacity: element.opacity ?? 1 }}
-          />
-        )}
-
-        {/* Shape stroke (optional) */}
-        <g transform={`scale(${w / 100} ${h / 100})`}>
-          <path
-            d={maskPath}
-            fill="none"
-            stroke={isSelected ? 'rgba(59,130,246,0.6)' : 'none'}
-            strokeWidth={isSelected ? 0.5 : 0}
-          />
-        </g>
-      </svg>
-
-      {/* Reposition mode indicator */}
-      {repositionMode && (
-        <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-          <div className="bg-blue-500/80 text-white text-[10px] font-bold px-2 py-1 rounded-lg backdrop-blur-sm">
-            ↕ Жылдыруу режими — 2× басып чыгыңыз
-          </div>
-        </div>
-      )}
-      {repositionMode && (
-        <div className="absolute inset-0 cursor-move"
-          style={{ cursor: 'move' }}
-          onPointerDown={startReposition}
-          onPointerMove={onReposition}
-          onPointerUp={endReposition}
-        />
-      )}
-    </div>
+    <>
+      {renderMainContent()}
+      
+      <SearchImageModal
+        isOpen={isSearchOpen}
+        onClose={() => setIsSearchOpen(false)}
+        initialQuery={element.stockQuery || element.alt || (element.src?.startsWith('stock:') ? element.src.replace('stock:', '') : element.src?.startsWith('ai:') ? element.src.replace('ai:', '') : '')}
+        onSearch={(source, query) => onUpdate({ src: `${source}:${query}`, stockQuery: query } as Partial<ImageElement>)}
+      />
+    </>
   )
 }
 

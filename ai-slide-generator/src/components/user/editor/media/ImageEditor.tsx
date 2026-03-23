@@ -135,6 +135,50 @@ export function ImageEditor({ element, onUpdate }: ImageEditorProps) {
         />
       </div>
 
+      {/* Stock Image Search / AI */}
+      <div className="px-4 py-3 border-b border-gray-100">
+        <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-2 flex items-center gap-1">
+          📷 Сүрөт издөө / AI
+        </p>
+        <div className="flex flex-col gap-1.5">
+          <input
+            id={`sidebar-search-input`}
+            type="text"
+            placeholder="Мисалы: бизнес, жаратылыш..."
+            defaultValue={element.stockQuery || ''}
+            onKeyDown={e => {
+              if (e.key === 'Enter') {
+                const val = (e.target as HTMLInputElement).value.trim()
+                if (val) onUpdate({ src: `stock:${val}`, stockQuery: val })
+              }
+            }}
+            className="w-full px-2 py-1.5 rounded-lg border border-gray-200 text-[10px] focus:outline-none focus:ring-1 focus:ring-blue-500"
+          />
+          <div className="flex gap-1">
+            <button 
+              onClick={(e) => {
+                const input = e.currentTarget.parentElement?.parentElement?.querySelector('input')
+                const val = input?.value.trim()
+                if (val) onUpdate({ src: `stock:${val}`, stockQuery: val })
+              }}
+              className="flex-1 py-1.5 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded text-[10px] font-medium transition-colors"
+            >
+              Сток издөө
+            </button>
+            <button 
+              onClick={(e) => {
+                const input = e.currentTarget.parentElement?.parentElement?.querySelector('input')
+                const val = input?.value.trim()
+                if (val) onUpdate({ src: `ai:${val}`, stockQuery: val })
+              }}
+              className="flex-1 py-1.5 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 text-indigo-700 rounded text-[10px] font-medium transition-colors flex items-center justify-center gap-1"
+            >
+              <span>✨</span> AI жаратуу
+            </button>
+          </div>
+        </div>
+      </div>
+
       {/* Background removal */}
       <div className="px-4 py-3">
         <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-2">AI Фон алуу</p>

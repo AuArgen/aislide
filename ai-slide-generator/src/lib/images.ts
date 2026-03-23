@@ -8,7 +8,10 @@ export interface StockImage {
 
 export async function searchUnsplash(query: string, page: number = 1): Promise<StockImage[]> {
   const key = process.env.UNSPLASH_ACCESS_KEY
-  if (!key) return []
+  if (!key) {
+    console.warn('searchUnsplash: UNSPLASH_ACCESS_KEY is not configured.')
+    return []
+  }
   try {
     const res = await fetch(
       `https://api.unsplash.com/search/photos?query=${encodeURIComponent(query)}&page=${page}&per_page=20`,
@@ -31,7 +34,10 @@ export async function searchUnsplash(query: string, page: number = 1): Promise<S
 
 export async function searchPexels(query: string, page: number = 1): Promise<StockImage[]> {
   const key = process.env.PEXELS_API_KEY
-  if (!key) return []
+  if (!key) {
+    console.warn('searchPexels: PEXELS_API_KEY is not configured.')
+    return []
+  }
   try {
     const res = await fetch(
       `https://api.pexels.com/v1/search?query=${encodeURIComponent(query)}&page=${page}&per_page=20`,
@@ -56,6 +62,10 @@ export async function searchPexels(query: string, page: number = 1): Promise<Sto
  * Searches for a single relevant image from Unsplash or Pexels.
  */
 export async function getRandomStockImage(query: string): Promise<string | null> {
+  if (!process.env.UNSPLASH_ACCESS_KEY && !process.env.PEXELS_API_KEY) {
+    console.warn('getRandomStockImage: No stock image API keys configured (Unsplash/Pexels). Resolution will fail.')
+  }
+
   const images = await searchUnsplash(query, 1)
   if (images.length > 0) return images[Math.floor(Math.random() * Math.min(5, images.length))].url
   

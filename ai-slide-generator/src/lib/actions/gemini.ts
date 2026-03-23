@@ -45,6 +45,7 @@ export async function generateAndSavePresentation(userId: string, prompt: string
           for (const el of slide.elements) {
             if (el.type === 'image' && el.src && el.src.startsWith('stock:')) {
               const query = el.src.replace('stock:', '').trim()
+              el.stockQuery = query // Save original query for regeneration
               const imageUrl = await getRandomStockImage(query)
               if (imageUrl) {
                 el.src = imageUrl
@@ -206,6 +207,7 @@ export async function generateSingleSlideAction(outlineItem: any, colorTheme: st
         for (const el of slide.elements) {
           if (el.type === 'image' && el.src && el.src.startsWith('stock:')) {
             const query = el.src.replace('stock:', '').trim()
+            el.stockQuery = query // Save original query for regeneration
             const imageUrl = await getRandomStockImage(query)
             if (imageUrl) {
               el.src = imageUrl
