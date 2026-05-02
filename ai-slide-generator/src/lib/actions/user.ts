@@ -51,6 +51,13 @@ function parsePresentation(row: any) {
   return normalizePresentationData({ ...row, slides })
 }
 
+export async function updateUserLanguage(userId: string, language: string) {
+  const allowed = ['ky', 'ru', 'en']
+  if (!allowed.includes(language)) return { success: false, error: 'Invalid language' }
+  db.prepare('UPDATE users SET preferred_language = ? WHERE id = ?').run(language, userId)
+  return { success: true }
+}
+
 export async function getUserSubscription(userId: string) {
   const row = db
     .prepare('SELECT * FROM subscriptions WHERE user_id = ? ORDER BY created_at DESC LIMIT 1')

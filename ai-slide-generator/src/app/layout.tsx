@@ -1,13 +1,14 @@
 import type { Metadata } from 'next'
 import { Inter } from 'next/font/google'
 import './globals.css'
+import { LanguageProvider } from '@/components/shared/LanguageProvider'
 import { Navbar } from '@/components/shared/Navbar'
 
 const inter = Inter({ subsets: ['latin', 'cyrillic'] })
 
 export const metadata: Metadata = {
-  title: 'AI Slide Generator - Презентацияларды AI менен түзүү',
-  description: 'AI жардамы менен кесипкөй презентацияларды жөнөкөй жана тез түзүңүз',
+  title: 'AI Slide — Create Professional Presentations with AI',
+  description: 'Create stunning AI-powered presentations in seconds with Google Gemini. Export to PowerPoint or PDF.',
 }
 
 export default function RootLayout({
@@ -17,11 +18,11 @@ export default function RootLayout({
 }) {
   return (
     <html lang="ky" suppressHydrationWarning>
-      <body className={`${inter.className} bg-white text-gray-900`} suppressHydrationWarning>
-        <Navbar />
-        <main className="min-h-[calc(100vh-64px)]">
+      <body className={`${inter.className} bg-[#0f172a] text-gray-900 antialiased`} suppressHydrationWarning>
+        <LanguageProvider>
+          <Navbar />
           {children}
-        </main>
+        </LanguageProvider>
       </body>
     </html>
   )

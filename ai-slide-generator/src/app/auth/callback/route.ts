@@ -58,7 +58,7 @@ export async function GET(request: NextRequest) {
         expires_at,
       }, jwtSecret)
 
-      const response = NextResponse.redirect(`${requestUrl.origin}/dashboard`)
+      const response = NextResponse.redirect(`${requestUrl.origin}/`)
       response.cookies.set('auth_token', internalToken, {
         path: '/',
         maxAge: 60 * 60 * 24 * 7,

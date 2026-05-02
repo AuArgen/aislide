@@ -96,4 +96,11 @@ function initSchema(d: DatabaseSync): void {
       created_at      TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
     );
   `)
+
+  // Add preferred_language column if not exists (SQLite migration)
+  try {
+    d.exec(`ALTER TABLE users ADD COLUMN preferred_language TEXT DEFAULT 'ky'`)
+  } catch {
+    // Column already exists — safe to ignore
+  }
 }

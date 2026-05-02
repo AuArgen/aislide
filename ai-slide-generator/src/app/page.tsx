@@ -1,82 +1,137 @@
-import Link from 'next/link'
-import { LoginButton } from '@/components/auth/LoginButton'
 import { cookies } from 'next/headers'
+import { getCurrentSession } from '@/lib/auth/auth-helpers'
+import { getUserByGoogleId } from '@/lib/auth/auth-db'
+import { getUserSubscription, getUserPresentations } from '@/lib/actions/user'
+import { AppSidebar } from '@/components/shared/AppSidebar'
+import { PresentationForm } from '@/components/user/PresentationForm'
+import { LandingContent } from '@/components/home/LandingContent'
+import { DeletePresentationButton } from '@/components/user/DeletePresentationButton'
+import Link from 'next/link'
 
 export default async function Home() {
-  const cookieStore = await cookies()
-  const authToken = cookieStore.get('auth_token')?.value
-  
-  // A simple check if token exists. In a real app, you'd verify the token.
-  const session = authToken ? { user: { email: 'user@example.com' } } : null
+  const session = await getCurrentSession()
+
+  if (!session) {
+    return (
+      <div className="flex h-screen overflow-hidden">
+        <AppSidebar user={null} presentations={[]} isPremium={false} isAdmin={false} />
+        <main className="flex-1 overflow-auto bg-white rounded-l-2xl">
+          <LandingContent />
+        </main>
+      </div>
+    )
+  }
+
+  const googleId = session.user.user_metadata?.google_id
+  const user = googleId ? await getUserByGoogleId(googleId) : null
+
+  if (!user) {
+    return (
+      <div className="flex h-screen overflow-hidden">
+        <AppSidebar user={null} presentations={[]} isPremium={false} isAdmin={false} />
+        <main className="flex-1 overflow-auto bg-white rounded-l-2xl">
+          <LandingContent />
+        </main>
+      </div>
+    )
+  }
+
+  const [subscription, presentations] = await Promise.all([
+    getUserSubscription(user.id),
+    getUserPresentations(user.id),
+  ])
+
+  const isAdmin = user.role === 'admin'
+  const isTeacher = user.role === 'teacher'
+  const isPremium = (subscription as any)?.status === 'active' || isAdmin || isTeacher
+  const isPending = (subscription as any)?.status === 'pending'
+
+  const userForSidebar = {
+    id: user.id,
+    email: user.email,
+    full_name: user.full_name,
+    role: user.role,
+  }
 
   return (
-    <div className="bg-white">
-      <div className="container mx-auto px-4 py-24">
-        <div className="max-w-4xl mx-auto text-center">
-          <span className="inline-block px-4 py-1.5 mb-6 text-sm font-semibold tracking-wider text-blue-600 uppercase bg-blue-50 rounded-full">
-            AI менен презентация түзүү
-          </span>
-          <h1 className="text-6xl font-extrabold text-gray-900 mb-8 tracking-tight">
-            Кесипкөй слайддарды <br />
-            <span className="bg-gradient-to-r from-blue-600 to-indigo-600 bg-clip-text text-transparent">
-              секунда ичинде
-            </span> түзүңүз
-          </h1>
-          <p className="text-xl text-gray-500 mb-12 max-w-2xl mx-auto leading-relaxed">
-            Google Gemini AI жардамы менен презентацияңыздын мазмунун автоматтык түрдө түзүп, 
-            аны PowerPoint же PDF форматында жүктөп алыңыз.
-          </p>
-
-          <div className="flex gap-4 justify-center items-center">
-            {session ? (
-              <Link 
-                href="/dashboard" 
-                className="px-8 py-4 bg-blue-600 text-white rounded-xl font-bold hover:bg-blue-700 transition-all shadow-lg shadow-blue-200 hover:-translate-y-0.5"
-              >
-                Башкы бетке өтүү
-              </Link>
-            ) : (
-              <>
-                <LoginButton />
-                <button className="px-8 py-4 bg-gray-50 text-gray-700 rounded-xl font-bold hover:bg-gray-100 transition-all border border-gray-200">
-                  Кененирээк билүү
-                </button>
-              </>
-            )}
-          </div>
-
-          <div className="mt-24 grid grid-cols-1 md:grid-cols-3 gap-12 text-left">
-            <div className="relative group p-8 bg-white border border-gray-100 rounded-3xl shadow-sm hover:shadow-xl transition-all hover:-translate-y-1">
-              <div className="w-12 h-12 bg-blue-50 text-blue-600 rounded-2xl flex items-center justify-center text-2xl mb-6 font-bold group-hover:scale-110 transition-transform">
-                🤖
-              </div>
-              <h3 className="text-xl font-bold text-gray-900 mb-3">AI Генерация</h3>
-              <p className="text-gray-500 leading-relaxed">
-                Темаңызды жазыңыз, калганын Gemini 1.5 Pro жасайт. Слайддын түзүмүн жана мазмунун иреттейт.
-              </p>
-            </div>
-
-            <div className="relative group p-8 bg-white border border-gray-100 rounded-3xl shadow-sm hover:shadow-xl transition-all hover:-translate-y-1">
-              <div className="w-12 h-12 bg-indigo-50 text-indigo-600 rounded-2xl flex items-center justify-center text-2xl mb-6 font-bold group-hover:scale-110 transition-transform">
-                🎨
-              </div>
-              <h3 className="text-xl font-bold text-gray-900 mb-3">Заманбап Дизайн</h3>
-              <p className="text-gray-500 leading-relaxed">
-                Даяр шаблондор жана темалар. Бардык слайддар таза ак фондо жана минималисттик стилде.
-              </p>
-            </div>
-
-            <div className="relative group p-8 bg-white border border-gray-100 rounded-3xl shadow-sm hover:shadow-xl transition-all hover:-translate-y-1">
-              <div className="w-12 h-12 bg-teal-50 text-teal-600 rounded-2xl flex items-center justify-center text-2xl mb-6 font-bold group-hover:scale-110 transition-transform">
-                📂
-              </div>
-              <h3 className="text-xl font-bold text-gray-900 mb-3">Экспорт жана Бөлүшүү</h3>
-              <p className="text-gray-500 leading-relaxed">
-                Бир чыкылдатуу менен .pptx же PDF жүктөп алыңыз. Же шилтеме аркылуу башкалар менен бөлүшүңүз.
-              </p>
-            </div>
-          </div>
+    <div className="flex h-screen overflow-hidden">
+      <AppSidebar
+        user={userForSidebar}
+        presentations={presentations as any[]}
+        isPremium={isPremium}
+        isAdmin={isAdmin}
+      />
+      <main className="flex-1 overflow-auto bg-white rounded-l-2xl flex flex-col">
+        <div className="flex-1 overflow-auto">
+          <PresentationForm userId={user.id} canGenerate={isPremium} />
         </div>
+
+        {/* Presentations list below the form */}
+        <PresentationsSection
+          presentations={presentations as any[]}
+          isPremium={isPremium}
+          isPending={isPending}
+          isAdmin={isAdmin}
+          userId={user.id}
+        />
+      </main>
+    </div>
+  )
+}
+
+function PresentationsSection({
+  presentations,
+  isPremium,
+  isPending,
+  isAdmin,
+  userId,
+}: {
+  presentations: any[]
+  isPremium: boolean
+  isPending: boolean
+  isAdmin: boolean
+  userId: string
+}) {
+  if (presentations.length === 0) return null
+
+  return (
+    <div className="border-t border-gray-100 px-8 py-6">
+      <div className="max-w-4xl mx-auto">
+        <PresentationsList presentations={presentations} />
+      </div>
+    </div>
+  )
+}
+
+function PresentationsList({ presentations }: { presentations: any[] }) {
+  return (
+    <div>
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+        {presentations.map((p: any) => (
+          <div
+            key={p.id}
+            className="relative group bg-white border border-gray-100 rounded-xl shadow-sm hover:shadow-md transition-all overflow-hidden"
+          >
+            <Link href={`/editor/${p.id}`} className="absolute inset-0 z-0" />
+            <div className="p-4 relative z-10 pointer-events-none">
+              <div className="flex items-start justify-between gap-2">
+                <div className="flex-1 min-w-0">
+                  <h4 className="font-semibold text-gray-900 group-hover:text-blue-600 transition-colors truncate text-sm">
+                    {p.title}
+                  </h4>
+                  <div className="flex items-center gap-2 mt-1 text-xs text-gray-400">
+                    <span>{new Date(p.created_at).toLocaleDateString()}</span>
+                    <span className="w-1 h-1 rounded-full bg-gray-300" />
+                    <span>{p.slides?.length || 0} slides</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <div className="absolute top-3 right-3 z-20">
+              <DeletePresentationButton id={p.id} />
+            </div>
+          </div>
+        ))}
       </div>
     </div>
   )

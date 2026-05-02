@@ -2,7 +2,7 @@
 
 @layer base {
   body {
-    background-color: #ffffff;
+    background-color: #0f172a;
     color: #0a0a0a;
   }
 }
@@ -12,17 +12,62 @@
     text-wrap: balance;
   }
 
-  .custom-scrollbar::-webkit-scrollbar {
-    width: 6px;
+  /* Light scrollbar (for white content areas) */
+  .custom-scroll::-webkit-scrollbar {
+    width: 5px;
+    height: 5px;
   }
-  .custom-scrollbar::-webkit-scrollbar-track {
+  .custom-scroll::-webkit-scrollbar-track {
     background: transparent;
   }
-  .custom-scrollbar::-webkit-scrollbar-thumb {
+  .custom-scroll::-webkit-scrollbar-thumb {
     background: #e5e7eb;
     border-radius: 10px;
   }
-  .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+  .custom-scroll::-webkit-scrollbar-thumb:hover {
     background: #d1d5db;
+  }
+
+  /* Dark scrollbar (for sidebar) */
+  .custom-scroll-dark::-webkit-scrollbar {
+    width: 4px;
+  }
+  .custom-scroll-dark::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  .custom-scroll-dark::-webkit-scrollbar-thumb {
+    background: rgba(255, 255, 255, 0.1);
+    border-radius: 10px;
+  }
+  .custom-scroll-dark::-webkit-scrollbar-thumb:hover {
+    background: rgba(255, 255, 255, 0.2);
+  }
+
+  /* Legacy alias */
+  .custom-scrollbar::-webkit-scrollbar { width: 6px; }
+  .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
+  .custom-scrollbar::-webkit-scrollbar-thumb { background: #e5e7eb; border-radius: 10px; }
+  .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: #d1d5db; }
+
+  /* Animations */
+  @keyframes fade-in {
+    from { opacity: 0; }
+    to { opacity: 1; }
+  }
+  @keyframes zoom-in-95 {
+    from { transform: scale(0.95); opacity: 0; }
+    to { transform: scale(1); opacity: 1; }
+  }
+  .animate-in {
+    animation-fill-mode: both;
+  }
+  .fade-in {
+    animation-name: fade-in;
+  }
+  .zoom-in-95 {
+    animation-name: zoom-in-95;
+  }
+  .duration-200 {
+    animation-duration: 200ms;
   }
 }
