@@ -1,6 +1,6 @@
 import { redirect } from 'next/navigation'
 import { getCurrentSession } from '@/lib/auth/auth-helpers'
-import { createClient } from '@/lib/supabase/server'
+import { db } from '@/lib/db'
 import Link from 'next/link'
 import { Activity } from 'lucide-react'
 
@@ -12,15 +12,9 @@ export default async function AdminPage() {
   }
 
   const googleId = session.user.user_metadata.google_id
+  const user = db.prepare('SELECT role FROM users WHERE google_id = ?').get(googleId) as { role: string } | undefined
 
-  const supabase = await createClient()
-  const { data: user } = await supabase
-    .from('users')
-    .select('role')
-    .eq('google_id', googleId)
-    .single()
-
-  if ((user as any)?.role !== 'admin') {
+  if (user?.role !== 'admin') {
     redirect('/dashboard')
   }
 

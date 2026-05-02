@@ -44,3 +44,8 @@ ai-slide-generator/node_modules
 ai-slide-generator/.next
 ai-slide-generator/.env
 ai-slide-generator/.env.local
+*.db
+*.sqlite3
+*.sqlite
+*.db-shm
+*.db-wal

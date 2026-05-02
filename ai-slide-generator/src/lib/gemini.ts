@@ -1,7 +1,6 @@
 import { GoogleGenerativeAI } from '@google/generative-ai'
 import { getSettingByKey } from '@/lib/actions/settings'
 import { GEMINI_LAYOUTS } from './geminiLayouts'
-import { Json } from '@/types/database'
 
 export interface AiResponse<T> {
   content: T
@@ -43,7 +42,7 @@ export async function generateSlides(prompt: string, slideCount: number = 5, ton
   let apiKey = customApiKey || await getSettingByKey('GEMINI_API_KEY')
 
   if (!apiKey) {
-    apiKey = process.env.GEMINI_API_KEY
+    apiKey = process.env.GEMINI_API_KEY ?? null
   }
 
   if (!apiKey) {
@@ -239,7 +238,7 @@ JSON Structure:
 export async function generateOutline(prompt: string, slideCount: number = 5, tone: string = 'business', audience: string = 'General', customApiKey?: string): Promise<AiResponse<any>> {
   const startTime = performance.now()
   let apiKey = customApiKey || await getSettingByKey('GEMINI_API_KEY')
-  if (!apiKey) apiKey = process.env.GEMINI_API_KEY
+  if (!apiKey) apiKey = process.env.GEMINI_API_KEY ?? null
   if (!apiKey) throw new Error('Gemini API key is not configured in settings or environment variables')
 
   const genAI = new GoogleGenerativeAI(apiKey)
@@ -361,7 +360,7 @@ Return ONLY the following JSON array format, with absolutely no additional text 
 export async function generateSingleSlide(outlineItem: any, colorTheme: string, customApiKey?: string): Promise<AiResponse<any>> {
   const startTime = performance.now()
   let apiKey = customApiKey || await getSettingByKey('GEMINI_API_KEY')
-  if (!apiKey) apiKey = process.env.GEMINI_API_KEY
+  if (!apiKey) apiKey = process.env.GEMINI_API_KEY ?? null
   if (!apiKey) throw new Error('Gemini API key is not configured in settings or environment variables')
 
   const genAI = new GoogleGenerativeAI(apiKey)

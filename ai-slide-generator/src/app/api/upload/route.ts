@@ -1,14 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { createClient } from '@supabase/supabase-js'
-
-const supabaseAdmin = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!,
-  { auth: { persistSession: false } }
-)
+import path from 'path'
+import fs from 'fs'
 
 const ALLOWED_TYPES = new Set(['image/png', 'image/jpeg', 'image/webp', 'image/svg+xml'])
-const MAX_BYTES = 10 * 1024 * 1024  // 10 MB
+const MAX_BYTES = 10 * 1024 * 1024 // 10 MB
+
+const UPLOAD_DIR = path.join(process.cwd(), 'public', 'uploads')
+if (!fs.existsSync(UPLOAD_DIR)) {
+  fs.mkdirSync(UPLOAD_DIR, { recursive: true })
+}
 
 export async function POST(req: NextRequest) {
   try {
@@ -26,26 +26,13 @@ export async function POST(req: NextRequest) {
     }
 
     const ext = file.type.split('/')[1].replace('svg+xml', 'svg')
-    const filename = `${Date.now()}-${Math.random().toString(36).substr(2, 6)}.${ext}`
+    const filename = `${Date.now()}-${Math.random().toString(36).substring(2, 8)}.${ext}`
     const buffer = Buffer.from(await file.arrayBuffer())
 
-    const { error } = await supabaseAdmin.storage
-      .from('slide-images')
-      .upload(filename, buffer, {
-        contentType: file.type,
-        upsert: false,
-      })
+    fs.writeFileSync(path.join(UPLOAD_DIR, filename), buffer)
 
-    if (error) {
-      console.error('Supabase storage upload error:', error)
-      return NextResponse.json({ error: 'Storage upload failed: ' + error.message }, { status: 500 })
-    }
-
-    const { data: { publicUrl } } = supabaseAdmin.storage
-      .from('slide-images')
-      .getPublicUrl(filename)
-
-    return NextResponse.json({ url: publicUrl })
+    const baseUrl = process.env.NEXT_PUBLIC_APP_URL ?? ''
+    return NextResponse.json({ url: `${baseUrl}/uploads/${filename}` })
   } catch (err) {
     console.error('Upload route error:', err)
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 })

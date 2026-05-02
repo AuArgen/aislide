@@ -1,6 +1,7 @@
 'use server'
 
-import { createAdminClient } from '@/lib/supabase/admin'
+import { db } from '@/lib/db'
+import { randomUUID } from 'node:crypto'
 
 export async function saveAiLog(data: {
   user_id: string
@@ -14,59 +15,66 @@ export async function saveAiLog(data: {
   cost_usd?: number
   duration_ms?: number
 }) {
-  const supabase = createAdminClient()
   try {
-    // @ts-ignore
-    const { data: insertedData, error } = await (supabase.from('ai_logs' as any) as any).insert([data]).select('id').single()
-    
-    if (error && error.code === 'PGRST205') {
-      console.log('Schema cache stale detected. Attempting to reload...')
-      try {
-        await supabase.rpc('reload_schema')
-      } catch (rpcErr) {}
-      
-      await new Promise(resolve => setTimeout(resolve, 800))
-      // @ts-ignore
-      const { data: retryData, error: retryError } = await (supabase.from('ai_logs' as any) as any).insert([data]).select('id').single()
-      if (retryError) {
-        console.error('Failed to save AI log after schema reload:', retryError)
-        return null
-      }
-      return (retryData as any)?.id
-    } else if (error) {
-      console.error('Failed to save AI log to database:', error)
-      return null
-    }
-    return (insertedData as any)?.id
+    const id = randomUUID()
+    const now = new Date().toISOString()
+    db.prepare(`
+      INSERT INTO ai_logs
+        (id, user_id, presentation_id, prompt, client_prompt, full_prompt, response,
+         is_valid, tokens_used, cost_usd, duration_ms, created_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      id,
+      data.user_id,
+      data.presentation_id ?? null,
+      data.prompt,
+      data.client_prompt ?? null,
+      data.full_prompt ?? null,
+      data.response ?? null,
+      data.is_valid ? 1 : 0,
+      data.tokens_used ?? 0,
+      data.cost_usd ?? 0,
+      data.duration_ms ?? 0,
+      now,
+    )
+    return id
   } catch (err) {
-    console.error('Failed to save AI log (exception):', err)
+    console.error('Failed to save AI log:', err)
     return null
   }
 }
 
-export async function updateAiLog(id: string, data: {
-  presentation_id?: string | null
-  response?: string | null
-  is_valid?: boolean
-  tokens_used?: number
-  cost_usd?: number
-  duration_ms?: number
-  full_prompt?: string | null
-}) {
-  const supabase = createAdminClient()
+export async function updateAiLog(
+  id: string,
+  data: {
+    presentation_id?: string | null
+    response?: string | null
+    is_valid?: boolean
+    tokens_used?: number
+    cost_usd?: number
+    duration_ms?: number
+    full_prompt?: string | null
+  },
+) {
   try {
-    const { error } = await (supabase
-      .from('ai_logs' as any) as any)
-      .update(data)
-      .eq('id', id)
+    const fields: string[] = []
+    const values: any[] = []
 
-    if (error) {
-      console.error('Failed to update AI log:', error)
-      return false
-    }
+    if (data.presentation_id !== undefined) { fields.push('presentation_id = ?'); values.push(data.presentation_id) }
+    if (data.response !== undefined) { fields.push('response = ?'); values.push(data.response) }
+    if (data.is_valid !== undefined) { fields.push('is_valid = ?'); values.push(data.is_valid ? 1 : 0) }
+    if (data.tokens_used !== undefined) { fields.push('tokens_used = ?'); values.push(data.tokens_used) }
+    if (data.cost_usd !== undefined) { fields.push('cost_usd = ?'); values.push(data.cost_usd) }
+    if (data.duration_ms !== undefined) { fields.push('duration_ms = ?'); values.push(data.duration_ms) }
+    if (data.full_prompt !== undefined) { fields.push('full_prompt = ?'); values.push(data.full_prompt) }
+
+    if (fields.length === 0) return true
+
+    values.push(id)
+    db.prepare(`UPDATE ai_logs SET ${fields.join(', ')} WHERE id = ?`).run(...values)
     return true
   } catch (err) {
-    console.error('Failed to update AI log (exception):', err)
+    console.error('Failed to update AI log:', err)
     return false
   }
 }

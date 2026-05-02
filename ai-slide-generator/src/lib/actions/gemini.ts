@@ -270,7 +270,7 @@ export async function textAiAction(text: string, mode: TextAiMode): Promise<{ su
   try {
     const startTime = performance.now()
     let apiKey = await getSettingByKey('GEMINI_API_KEY')
-    if (!apiKey) apiKey = process.env.GEMINI_API_KEY
+    if (!apiKey) apiKey = process.env.GEMINI_API_KEY ?? null
     if (!apiKey) return { success: false, error: 'Gemini API key is not configured' }
 
     const session = await getCurrentSession()

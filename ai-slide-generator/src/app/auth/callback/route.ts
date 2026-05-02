@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
-import { createClient } from '@/lib/supabase/server'
-import { checkExternalRole, upsertUser, decodeToken } from '@/lib/auth/auth-helpers'
+import { checkExternalRole, decodeToken } from '@/lib/auth/auth-helpers'
+import { upsertUser } from '@/lib/auth/auth-db'
 import { signJWT } from '@/lib/auth/jwt'
 import type { NextRequest } from 'next/server'
 
@@ -27,27 +27,22 @@ export async function GET(request: NextRequest) {
         return NextResponse.redirect(`${requestUrl.origin}/auth/error`)
       }
 
-      // Check for external role
       const { role, expires_at } = await checkExternalRole(googleId)
 
-      // Save/Update user in our database
-      const userData = {
+      const savedUser = upsertUser({
         google_id: googleId,
-        email: email,
+        email,
         full_name: name,
         avatar_url: avatarUrl,
-        role: role,
+        role,
         last_login: new Date().toISOString(),
-      }
-
-      const savedUser = await upsertUser(userData)
+      })
 
       if (!savedUser) {
         console.error('Failed to save user')
         return NextResponse.redirect(`${requestUrl.origin}/auth/error`)
       }
 
-      // Create our own project-specific token
       const jwtSecret = process.env.JWT_SECRET
       if (!jwtSecret) {
         console.error('JWT_SECRET is not set in environment variables')
@@ -57,19 +52,17 @@ export async function GET(request: NextRequest) {
       const internalToken = await signJWT({
         user_id: savedUser.id,
         google_id: googleId,
-        email: email,
-        name: name,
-        role: role,
-        expires_at: expires_at
+        email,
+        name,
+        role,
+        expires_at,
       }, jwtSecret)
 
       const response = NextResponse.redirect(`${requestUrl.origin}/dashboard`)
-
-      // Store our internal token in cookie
       response.cookies.set('auth_token', internalToken, {
         path: '/',
-        maxAge: 60 * 60 * 24 * 7, // 1 week
-        httpOnly: false // Allow client-side access to check if logged in
+        maxAge: 60 * 60 * 24 * 7,
+        httpOnly: false,
       })
 
       return response
@@ -79,6 +72,5 @@ export async function GET(request: NextRequest) {
     }
   }
 
-  // Redirect to home if no token
   return NextResponse.redirect(`${requestUrl.origin}/`)
 }

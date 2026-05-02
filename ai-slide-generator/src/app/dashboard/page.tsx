@@ -1,5 +1,6 @@
 import Link from 'next/link'
-import { getCurrentSession, getUserByGoogleId } from '@/lib/auth/auth-helpers'
+import { getCurrentSession } from '@/lib/auth/auth-helpers'
+import { getUserByGoogleId } from '@/lib/auth/auth-db'
 import { getUserSubscription, getUserPresentations } from '@/lib/actions/user'
 import { PresentationForm } from '@/components/user/PresentationForm'
 import { DeletePresentationButton } from '@/components/user/DeletePresentationButton'

@@ -2,7 +2,6 @@
 
 import { useState, useRef, useEffect, useCallback } from 'react'
 import { updatePresentation } from '@/lib/actions/user'
-import { supabase } from '@/lib/supabase/client'
 import { exportToPPTX, exportToPDF, exportToImage } from '@/lib/export'
 import 'katex/dist/katex.min.css'
 import { BlockMath } from 'react-katex'
@@ -591,20 +590,7 @@ function PresentationEditorInner({
   })
 
 
-  // Realtime — gate with isSavingRef to avoid stomping in-flight local saves
-  useEffect(() => {
-    const ch = supabase.channel(`presentation:${initialPresentation.id}`)
-      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'presentations', filter: `id=eq.${initialPresentation.id}` },
-        (payload: Record<string, unknown>) => {
-          const np = payload.new as { slides?: Slide[] }
-          if (np?.slides && !isSavingRef.current) setSlides(np.slides)
-        })
-      .subscribe()
-    return () => { supabase.removeChannel(ch) }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [initialPresentation.id])
-
-  // ── Helpers ────────────────────────────────────────────────────────────────
+// ── Helpers ────────────────────────────────────────────────────────────────
 
   const updateSlideField = (index: number, field: keyof Slide, value: unknown) => {
     setSlides(prev => { const s = [...prev]; s[index] = { ...s[index], [field]: value }; return s })

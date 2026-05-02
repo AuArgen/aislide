@@ -1,85 +1,79 @@
 'use server'
 
-import { supabase } from '@/lib/supabase/client'
+import { db } from '@/lib/db'
 import { revalidatePath } from 'next/cache'
 import { sendTelegramNotification } from '@/lib/telegram'
+import { randomUUID } from 'node:crypto'
 
-export async function createSubscription(userId: string, planType: 'free' | 'premium', paymentProofUrl: string) {
-  const { data, error } = await supabase
-    .from('subscriptions')
-    .insert({
-      user_id: userId,
-      plan_type: planType,
-      status: 'pending',
-      payment_proof_url: paymentProofUrl,
-    } as any)
-    .select('*, users(full_name, email)')
-    .single()
+export async function createSubscription(
+  userId: string,
+  planType: 'free' | 'premium',
+  paymentProofUrl: string,
+) {
+  const id = randomUUID()
+  const now = new Date().toISOString()
 
-  if (error) {
-    console.error('Error creating subscription:', error)
-    return { success: false, error: error.message }
-  }
+  try {
+    db.prepare(`
+      INSERT INTO subscriptions (id, user_id, plan_type, status, payment_proof_url, created_at, updated_at)
+      VALUES (?, ?, ?, 'pending', ?, ?, ?)
+    `).run(id, userId, planType, paymentProofUrl, now, now)
 
-  // Send Telegram Notification to Admin
-  const user = (data as any).users
-  const message = `
+    const user = db.prepare('SELECT full_name, email FROM users WHERE id = ?').get(userId) as any
+    const message = `
 🔔 <b>Жаңы төлөм сурамы!</b>
 👤 Колдонуучу: ${user?.full_name || 'Белгисиз'}
 📧 Email: ${user?.email || 'Жок'}
 💎 Тариф: ${planType.toUpperCase()}
 🔗 <a href="${process.env.NEXT_PUBLIC_APP_URL}/admin/payments">Админ панелден текшерүү</a>
-  `.trim()
+    `.trim()
 
-  await sendTelegramNotification(message)
-
-  return { success: true, data }
+    await sendTelegramNotification(message)
+    return { success: true, data: { id }, error: undefined }
+  } catch (err: any) {
+    console.error('Error creating subscription:', err)
+    return { success: false, error: err?.message ?? 'Unknown error', data: undefined }
+  }
 }
 
 export async function getPendingPayments() {
-  const { data, error } = await supabase
-    .from('subscriptions')
-    .select(`
-      *,
-      users (
-        full_name,
-        email
-      )
-    `)
-    .eq('status', 'pending')
-    .order('created_at', { ascending: false })
+  const rows = db.prepare(`
+    SELECT s.*, u.full_name, u.email
+    FROM subscriptions s
+    LEFT JOIN users u ON s.user_id = u.id
+    WHERE s.status = 'pending'
+    ORDER BY s.created_at DESC
+  `).all() as any[]
 
-  if (error) {
-    console.error('Error fetching payments:', error)
-    return []
-  }
-
-  return data
+  return rows.map(({ full_name, email, ...sub }) => ({
+    ...sub,
+    users: { full_name, email },
+  }))
 }
 
-export async function updatePaymentStatus(subscriptionId: string, status: 'active' | 'rejected') {
-  const updateData: any = { status, updated_at: new Date().toISOString() }
-  
+export async function updatePaymentStatus(
+  subscriptionId: string,
+  status: 'active' | 'rejected',
+) {
+  const now = new Date().toISOString()
+  const fields: string[] = ['status = ?', 'updated_at = ?']
+  const values: any[] = [status, now]
+
   if (status === 'active') {
     const startDate = new Date()
     const endDate = new Date()
-    endDate.setMonth(endDate.getMonth() + 1) // 1 month subscription
-    
-    updateData.start_date = startDate.toISOString()
-    updateData.end_date = endDate.toISOString()
-    updateData.expires_at = endDate.toISOString()
+    endDate.setMonth(endDate.getMonth() + 1)
+    fields.push('start_date = ?', 'end_date = ?', 'expires_at = ?')
+    values.push(startDate.toISOString(), endDate.toISOString(), endDate.toISOString())
   }
 
-  const { error } = await supabase
-    .from('subscriptions')
-    .update(updateData as never)
-    .eq('id', subscriptionId)
-
-  if (error) {
-    console.error('Error updating payment status:', error)
-    return { success: false, error: error.message }
+  try {
+    values.push(subscriptionId)
+    db.prepare(`UPDATE subscriptions SET ${fields.join(', ')} WHERE id = ?`).run(...values)
+    revalidatePath('/admin/payments')
+    return { success: true }
+  } catch (err: any) {
+    console.error('Error updating payment status:', err)
+    return { success: false, error: err?.message ?? 'Unknown error' }
   }
-
-  revalidatePath('/admin/payments')
-  return { success: true }
 }

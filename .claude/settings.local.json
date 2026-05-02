@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npm install *)",
+      "Bash(npm run *)",
+      "Bash(grep -n \"apiKey = process.env.GEMINI_API_KEY$\" \"c:/OSPanel/home/aislide/ai-slide-generator/src/lib/gemini.ts\")"
+    ]
+  }
+}
