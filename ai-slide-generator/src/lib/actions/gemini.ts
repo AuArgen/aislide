@@ -6,6 +6,7 @@ import { createPresentation } from '@/lib/actions/user'
 import { getSettingByKey } from '@/lib/actions/settings'
 import { revalidatePath } from 'next/cache'
 import { saveAiLog, updateAiLog } from '@/lib/actions/logs'
+import { logPresentationEvent } from '@/lib/actions/analytics'
 import { getCurrentSession } from '@/lib/auth/auth-helpers'
 
 export async function generateAndSavePresentation(userId: string, prompt: string, slideCount: number = 5, tone: string = 'business') {
@@ -24,7 +25,7 @@ export async function generateAndSavePresentation(userId: string, prompt: string
     // 2.5 Resolve stock images if any
     if (presentationContent && presentationContent.slides) {
       const { getRandomStockImage } = await import('@/lib/images')
-      
+
       for (const slide of presentationContent.slides) {
         // Resolve slide background
         if (slide.background && slide.background.startsWith('stock:')) {
@@ -67,10 +68,13 @@ export async function generateAndSavePresentation(userId: string, prompt: string
     const successResult = result as { success: true; data: any }
 
     if (successResult.success && successResult.data) {
+      const presentationId = successResult.data.id
+      const actualSlideCount = presentationContent.slides?.length ?? slideCount
+
       // 4. Update log with full details
       if (logId) {
         await updateAiLog(logId, {
-          presentation_id: successResult.data.id,
+          presentation_id: presentationId,
           full_prompt: metadata.fullPrompt,
           is_valid: metadata.isValid,
           response: metadata.rawResponse,
@@ -80,8 +84,30 @@ export async function generateAndSavePresentation(userId: string, prompt: string
         })
       }
 
+      // 5. Log presentation creation event with per-slide token estimates
+      await logPresentationEvent({
+        presentation_id: presentationId,
+        user_id: userId,
+        event_type: 'ai_generate_presentation',
+        slide_count: actualSlideCount,
+        prompt,
+        input_tokens: metadata.inputTokens,
+        output_tokens: metadata.outputTokens,
+        total_tokens: metadata.tokensUsed,
+        cost_usd: Number(metadata.costUsd.toFixed(6)),
+        duration_ms: metadata.durationMs,
+        metadata: {
+          estimated_tokens_per_slide: actualSlideCount > 0
+            ? Math.round(metadata.tokensUsed / actualSlideCount)
+            : 0,
+          estimated_cost_per_slide: actualSlideCount > 0
+            ? Number((metadata.costUsd / actualSlideCount).toFixed(6))
+            : 0,
+        }
+      })
+
       revalidatePath('/dashboard')
-      return { success: true, id: successResult.data.id }
+      return { success: true, id: presentationId }
     } else {
       const errorStr = (result as any).error || 'Failed to save presentation'
       if (logId) {
@@ -94,7 +120,7 @@ export async function generateAndSavePresentation(userId: string, prompt: string
     }
   } catch (error: any) {
     console.error('Action Error:', error)
-    
+
     let errorMessage = error.message || 'Генерация учурунда ката кетти'
     let partialMetadata = null
 
@@ -104,7 +130,6 @@ export async function generateAndSavePresentation(userId: string, prompt: string
       partialMetadata = errObj.partialMetadata
     } catch (e) {}
 
-    // Ар дайым логту жаңыртуу (ката болсо дагы)
     if (logId) {
       await updateAiLog(logId, {
         response: `Error: ${errorMessage}`,
@@ -134,7 +159,7 @@ export async function generateOutlineAction(prompt: string, slideCount: number =
 
   try {
     const { content: outline, metadata } = await generateOutline(prompt, slideCount, tone, audience, customApiKey)
-    
+
     if (logId) {
       await updateAiLog(logId, {
         full_prompt: metadata.fullPrompt,
@@ -173,7 +198,13 @@ export async function generateOutlineAction(prompt: string, slideCount: number =
   }
 }
 
-export async function generateSingleSlideAction(outlineItem: any, colorTheme: string, customApiKey?: string) {
+export async function generateSingleSlideAction(
+  outlineItem: any,
+  colorTheme: string,
+  customApiKey?: string,
+  presentationId?: string,
+  slideIndex?: number,
+) {
   const session = await getCurrentSession()
   let logId: string | null = null
 
@@ -188,11 +219,11 @@ export async function generateSingleSlideAction(outlineItem: any, colorTheme: st
 
   try {
     const { content: slide, metadata } = await generateSingleSlide(outlineItem, colorTheme, customApiKey)
-    
+
     // 2. Resolve stock images if any
     if (slide) {
       const { getRandomStockImage } = await import('@/lib/images')
-      
+
       // Resolve slide background
       if (slide.background && slide.background.startsWith('stock:')) {
         const query = slide.background.replace('stock:', '').trim()
@@ -219,6 +250,7 @@ export async function generateSingleSlideAction(outlineItem: any, colorTheme: st
 
     if (logId) {
       await updateAiLog(logId, {
+        presentation_id: presentationId ?? null,
         full_prompt: metadata.fullPrompt,
         is_valid: metadata.isValid,
         response: metadata.rawResponse,
@@ -228,10 +260,26 @@ export async function generateSingleSlideAction(outlineItem: any, colorTheme: st
       })
     }
 
+    // Log per-slide event if we know which presentation this belongs to
+    if (session && presentationId) {
+      await logPresentationEvent({
+        presentation_id: presentationId,
+        user_id: session.user.id,
+        event_type: 'ai_generate_slide',
+        slide_index: slideIndex ?? null,
+        prompt: outlineItem.title + ': ' + outlineItem.coreMessage,
+        input_tokens: metadata.inputTokens,
+        output_tokens: metadata.outputTokens,
+        total_tokens: metadata.tokensUsed,
+        cost_usd: Number(metadata.costUsd.toFixed(6)),
+        duration_ms: metadata.durationMs,
+      })
+    }
+
     return { success: true, data: slide }
   } catch (error: any) {
     console.error('Single Slide Action Error:', error)
-    
+
     let errorMessage = error.message || 'Слайдды түзүүдө ката кетти'
     let partialMetadata = null
 
@@ -266,7 +314,12 @@ const TEXT_AI_PROMPTS: Record<TextAiMode, string> = {
   rewrite: 'Профессионалдык жазуу: Берилген текстти профессионалдык, ишкер тилде кайра жаз. Мазмунду сакта, бирок дараметин жогорулат. Жооп — тек тексттин өзү (эч кандай аталыш же чоочун пикир жок).',
 }
 
-export async function textAiAction(text: string, mode: TextAiMode): Promise<{ success: boolean; result?: string; error?: string }> {
+export async function textAiAction(
+  text: string,
+  mode: TextAiMode,
+  presentationId?: string,
+  slideIndex?: number,
+): Promise<{ success: boolean; result?: string; error?: string }> {
   try {
     const startTime = performance.now()
     let apiKey = await getSettingByKey('GEMINI_API_KEY')
@@ -291,7 +344,7 @@ export async function textAiAction(text: string, mode: TextAiMode): Promise<{ su
     const result = await model.generateContent(prompt)
     const response = await result.response
     const output = response.text().trim()
-    
+
     const durationMs = performance.now() - startTime
     const inputTokens = response.usageMetadata?.promptTokenCount || 0
     const outputTokens = response.usageMetadata?.candidatesTokenCount || 0
@@ -300,11 +353,29 @@ export async function textAiAction(text: string, mode: TextAiMode): Promise<{ su
 
     if (logId) {
       await updateAiLog(logId, {
+        presentation_id: presentationId ?? null,
         full_prompt: prompt,
         response: output,
         tokens_used: totalTokens,
         cost_usd: Number(costUsd.toFixed(6)),
         duration_ms: Math.round(durationMs)
+      })
+    }
+
+    // Log per-slide event
+    if (session && presentationId) {
+      await logPresentationEvent({
+        presentation_id: presentationId,
+        user_id: session.user.id,
+        event_type: 'ai_edit_text',
+        slide_index: slideIndex ?? null,
+        prompt: `${mode}: ${text.substring(0, 200)}`,
+        input_tokens: inputTokens,
+        output_tokens: outputTokens,
+        total_tokens: totalTokens,
+        cost_usd: Number(costUsd.toFixed(6)),
+        duration_ms: Math.round(durationMs),
+        metadata: { mode },
       })
     }
 

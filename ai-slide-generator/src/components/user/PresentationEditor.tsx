@@ -453,7 +453,7 @@ export function PresentationEditor({ initialPresentation }: PresentationEditorPr
   // component (which owns all hooks) renders for the first time.
   const state = useSlidesStore.getState()
   if (state.slides.length === 0) {
-    state.initSlides(hydrateSlides(initialPresentation.slides))
+    state.initSlides(hydrateSlides(initialPresentation.slides), initialPresentation.id)
   }
 
   return (
@@ -477,7 +477,7 @@ function PresentationEditorInner({
 
   // Re-init when navigating to a different presentation
   useEffect(() => {
-    initSlides(hydrateSlides(initialPresentation.slides))
+    initSlides(hydrateSlides(initialPresentation.slides), initialPresentation.id)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [initialPresentation.id])
 

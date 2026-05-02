@@ -145,13 +145,14 @@ export function hydrateSlidesIds(slides: Slide[]): Slide[] {
 export interface SlidesState {
   slides: Slide[]
   activeSlideId: string | null
+  presentationId: string | null
 
   // ── Undo / Redo stacks (each entry is a full slides snapshot) ──────────────
   history: { slides: Slide[]; activeSlideId: string | null }[]
   future: { slides: Slide[]; activeSlideId: string | null }[]
 
   // ── Initialisation ─────────────────────────────────────────────────────────
-  initSlides(slides: Slide[]): void
+  initSlides(slides: Slide[], presentationId?: string): void
 
   // ── Navigation ────────────────────────────────────────────────────────────
   setActiveSlide(id: string): void
@@ -198,13 +199,14 @@ export const useSlidesStore = create<SlidesState>((set, get) => {
   return {
     slides: [],
     activeSlideId: null,
+    presentationId: null,
     history: [],
     future: [],
 
     // ── Init ──────────────────────────────────────────────────────────────────
-    initSlides(rawSlides) {
+    initSlides(rawSlides, presentationId) {
       const slides = hydrateSlidesIds(rawSlides)
-      set({ slides, activeSlideId: slides[0]?.id ?? null, history: [], future: [] })
+      set({ slides, activeSlideId: slides[0]?.id ?? null, presentationId: presentationId ?? null, history: [], future: [] })
     },
 
     // ── Navigation ────────────────────────────────────────────────────────────
@@ -216,13 +218,27 @@ export const useSlidesStore = create<SlidesState>((set, get) => {
     addSlide({ layoutType = 'blank', afterId } = {}) {
       const newHistory = snapshot()
       const slide = makeBlankSlide(layoutType)
+      let insertedIndex = 0
       set(s => {
         const slides = [...s.slides]
         const insertAfter = afterId
           ? slides.findIndex(x => x.id === afterId)
           : slides.findIndex(x => x.id === s.activeSlideId)
         const at = insertAfter === -1 ? slides.length : insertAfter + 1
+        insertedIndex = at
         slides.splice(at, 0, slide)
+        if (s.presentationId) {
+          fetch('/api/analytics/event', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              presentation_id: s.presentationId,
+              event_type: 'user_add_slide',
+              slide_index: at,
+              slide_count: slides.length,
+            }),
+          }).catch(() => {})
+        }
         return { slides, activeSlideId: slide.id, history: newHistory, future: [] }
       })
       return slide.id
@@ -237,9 +253,19 @@ export const useSlidesStore = create<SlidesState>((set, get) => {
         const idx = s.slides.findIndex(x => x.id === id)
         if (idx === -1) return s
         const next = s.slides.filter(x => x.id !== id)
-        // Fallback active: previous slide, or next, or first
-        const newActive =
-          next[idx - 1]?.id ?? next[idx]?.id ?? next[0]?.id ?? null
+        const newActive = next[idx - 1]?.id ?? next[idx]?.id ?? next[0]?.id ?? null
+        if (s.presentationId) {
+          fetch('/api/analytics/event', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              presentation_id: s.presentationId,
+              event_type: 'user_delete_slide',
+              slide_index: idx,
+              slide_count: next.length,
+            }),
+          }).catch(() => {})
+        }
         return { slides: next, activeSlideId: newActive, history: newHistory, future: [] }
       })
     },
@@ -257,6 +283,18 @@ export const useSlidesStore = create<SlidesState>((set, get) => {
         newId = copy.id
         const slides = [...s.slides]
         slides.splice(idx + 1, 0, copy)
+        if (s.presentationId) {
+          fetch('/api/analytics/event', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              presentation_id: s.presentationId,
+              event_type: 'user_duplicate_slide',
+              slide_index: idx + 1,
+              slide_count: slides.length,
+            }),
+          }).catch(() => {})
+        }
         return { slides, activeSlideId: copy.id, history: newHistory, future: [] }
       })
       return newId

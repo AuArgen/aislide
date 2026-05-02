@@ -2,7 +2,7 @@ import { redirect } from 'next/navigation'
 import { getCurrentSession } from '@/lib/auth/auth-helpers'
 import { db } from '@/lib/db'
 import Link from 'next/link'
-import { Activity } from 'lucide-react'
+import { Activity, BarChart2 } from 'lucide-react'
 
 export default async function AdminPage() {
   const session = await getCurrentSession()
@@ -56,6 +56,17 @@ export default async function AdminPage() {
             Gemini генерацияларынын тарыхын, сурамдарды, кеткен убакытты, токендерди жана чыгымды (USD) көзөмөлдөңүз.
           </p>
           <Link href="/admin/logs" className="text-purple-600 hover:text-purple-500 text-sm font-medium">Ачуу →</Link>
+        </div>
+
+        <div className="bg-white border border-gray-200 rounded-lg p-6 flex flex-col items-start">
+          <div className="p-2 bg-indigo-100 rounded-lg text-indigo-600 mb-4">
+            <BarChart2 className="w-6 h-6" />
+          </div>
+          <h2 className="font-semibold mb-2">Презентация Аналитикасы</h2>
+          <p className="text-sm text-gray-500 mb-4 flex-1">
+            Ар бир презентация боюнча токен чыгымы, слайдга болжолдуу нарк, AI жана колдонуучу аракеттеринин толук тарыхы.
+          </p>
+          <Link href="/admin/analytics" className="text-indigo-600 hover:text-indigo-500 text-sm font-medium">Ачуу →</Link>
         </div>
       </div>
     </div>

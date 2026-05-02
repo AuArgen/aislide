@@ -95,6 +95,24 @@ function initSchema(d: DatabaseSync): void {
       duration_ms     INTEGER NOT NULL DEFAULT 0,
       created_at      TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
     );
+
+    CREATE TABLE IF NOT EXISTS presentation_events (
+      id              TEXT PRIMARY KEY,
+      presentation_id TEXT NOT NULL,
+      user_id         TEXT NOT NULL,
+      event_type      TEXT NOT NULL,
+      slide_index     INTEGER,
+      slide_count     INTEGER,
+      prompt          TEXT,
+      model           TEXT DEFAULT 'gemini-2.5-flash',
+      input_tokens    INTEGER NOT NULL DEFAULT 0,
+      output_tokens   INTEGER NOT NULL DEFAULT 0,
+      total_tokens    INTEGER NOT NULL DEFAULT 0,
+      cost_usd        REAL NOT NULL DEFAULT 0,
+      duration_ms     INTEGER NOT NULL DEFAULT 0,
+      metadata        TEXT,
+      created_at      TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+    );
   `)
 
   // Add preferred_language column if not exists (SQLite migration)

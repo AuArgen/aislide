@@ -9,6 +9,8 @@ export interface AiResponse<T> {
     fullPrompt: string
     clientPrompt: string
     isValid: boolean
+    inputTokens: number
+    outputTokens: number
     tokensUsed: number
     costUsd: number
     durationMs: number
@@ -202,6 +204,8 @@ JSON Structure:
         fullPrompt: `${systemPrompt}\n\nUSER PROMPT: ${prompt}`,
         clientPrompt: prompt,
         isValid,
+        inputTokens,
+        outputTokens,
         tokensUsed: totalTokens,
         costUsd,
         durationMs: Math.round(durationMs)
@@ -326,6 +330,8 @@ Return ONLY the following JSON array format, with absolutely no additional text 
         fullPrompt: systemPrompt,
         clientPrompt: prompt,
         isValid,
+        inputTokens,
+        outputTokens,
         tokensUsed: totalTokens,
         costUsd,
         durationMs: Math.round(durationMs)
@@ -466,6 +472,8 @@ Return ONLY raw JSON. Do NOT include markdown formatting like \`\`\`json.
         fullPrompt: systemPrompt,
         clientPrompt: outlineItem.title,
         isValid,
+        inputTokens,
+        outputTokens,
         tokensUsed: totalTokens,
         costUsd,
         durationMs: Math.round(durationMs)
