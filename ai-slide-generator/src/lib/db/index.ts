@@ -29,6 +29,31 @@ if (process.env.NODE_ENV !== 'production') {
   globalThis.__db = db
 }
 
+// Run on every module evaluation so hot-reload doesn't miss new tables
+try {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS presentation_events (
+      id              TEXT PRIMARY KEY,
+      presentation_id TEXT NOT NULL,
+      user_id         TEXT NOT NULL,
+      event_type      TEXT NOT NULL,
+      slide_index     INTEGER,
+      slide_count     INTEGER,
+      prompt          TEXT,
+      model           TEXT DEFAULT 'gemini-2.5-flash',
+      input_tokens    INTEGER NOT NULL DEFAULT 0,
+      output_tokens   INTEGER NOT NULL DEFAULT 0,
+      total_tokens    INTEGER NOT NULL DEFAULT 0,
+      cost_usd        REAL NOT NULL DEFAULT 0,
+      duration_ms     INTEGER NOT NULL DEFAULT 0,
+      metadata        TEXT,
+      created_at      TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+    )
+  `)
+} catch {
+  // Safe to ignore
+}
+
 function initSchema(d: DatabaseSync): void {
   d.exec(`
     CREATE TABLE IF NOT EXISTS users (
@@ -120,5 +145,30 @@ function initSchema(d: DatabaseSync): void {
     d.exec(`ALTER TABLE users ADD COLUMN preferred_language TEXT DEFAULT 'ky'`)
   } catch {
     // Column already exists — safe to ignore
+  }
+
+  // Add presentation_events table if not exists (SQLite migration)
+  try {
+    d.exec(`
+      CREATE TABLE IF NOT EXISTS presentation_events (
+        id              TEXT PRIMARY KEY,
+        presentation_id TEXT NOT NULL,
+        user_id         TEXT NOT NULL,
+        event_type      TEXT NOT NULL,
+        slide_index     INTEGER,
+        slide_count     INTEGER,
+        prompt          TEXT,
+        model           TEXT DEFAULT 'gemini-2.5-flash',
+        input_tokens    INTEGER NOT NULL DEFAULT 0,
+        output_tokens   INTEGER NOT NULL DEFAULT 0,
+        total_tokens    INTEGER NOT NULL DEFAULT 0,
+        cost_usd        REAL NOT NULL DEFAULT 0,
+        duration_ms     INTEGER NOT NULL DEFAULT 0,
+        metadata        TEXT,
+        created_at      TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+      )
+    `)
+  } catch {
+    // Safe to ignore
   }
 }
