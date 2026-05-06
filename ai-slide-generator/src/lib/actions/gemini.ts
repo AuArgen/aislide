@@ -154,6 +154,7 @@ export async function generateOutlineAction(
   customApiKey?: string,
   fileContext?: string,
   imageFiles?: Array<{ filename: string; url: string }>,
+  modelId?: string,
 ) {
   const session = await getCurrentSession()
   let logId: string | null = null
@@ -169,7 +170,7 @@ export async function generateOutlineAction(
 
   try {
     const { content, metadata } = await generateOutline(
-      prompt, slideCount, tone, audience, customApiKey, fileContext, imageFiles
+      prompt, slideCount, tone, audience, customApiKey, fileContext, imageFiles, modelId
     )
 
     if (logId) {
@@ -222,6 +223,7 @@ export async function generateSingleSlideAction(
   customApiKey?: string,
   presentationId?: string,
   slideIndex?: number,
+  modelId?: string,
 ) {
   const session = await getCurrentSession()
   let logId: string | null = null
@@ -236,7 +238,7 @@ export async function generateSingleSlideAction(
   }
 
   try {
-    const { content: slide, metadata } = await generateSingleSlide(outlineItem, colorTheme, customApiKey)
+    const { content: slide, metadata } = await generateSingleSlide(outlineItem, colorTheme, customApiKey, modelId)
 
     // 2. Resolve stock images if any
     if (slide) {

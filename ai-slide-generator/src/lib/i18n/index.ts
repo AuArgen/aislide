@@ -106,6 +106,10 @@ export const translations = {
       getApiKey: 'Бекер API ключ алуу',
       apiKeyHint: 'Ключуңуз болсо — чектеоо жок. aistudio.google.com/api-keys',
       invalidApiKeyError: 'API ключ жараксыз же мөөнөтү өткөн. Текшерип, кайра киргизиңиз.',
+      aiModel: 'AI Модели',
+      modelFast: 'Ылдам',
+      modelBalanced: 'Балансталган',
+      modelPowerful: 'Күчтүү',
     },
     auth: {
       signIn: 'Google менен кирүү',
@@ -313,6 +317,10 @@ export const translations = {
       getApiKey: 'Получить бесплатный API-ключ',
       apiKeyHint: 'Со своим ключом — без ограничений. aistudio.google.com/api-keys',
       invalidApiKeyError: 'API-ключ недействителен или устарел. Проверьте и введите заново.',
+      aiModel: 'AI Модель',
+      modelFast: 'Быстрая',
+      modelBalanced: 'Сбалансированная',
+      modelPowerful: 'Мощная',
     },
     auth: {
       signIn: 'Войти с Google',
@@ -520,6 +528,10 @@ export const translations = {
       getApiKey: 'Get Free API Key',
       apiKeyHint: 'With your own key — no limits. aistudio.google.com/api-keys',
       invalidApiKeyError: 'API key is invalid or expired. Please check and re-enter it.',
+      aiModel: 'AI Model',
+      modelFast: 'Fast',
+      modelBalanced: 'Balanced',
+      modelPowerful: 'Powerful',
     },
     auth: {
       signIn: 'Sign in with Google',

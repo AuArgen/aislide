@@ -247,6 +247,7 @@ export async function generateOutline(
   customApiKey?: string,
   fileContext?: string,
   imageFiles?: Array<{ filename: string; url: string }>,
+  modelId?: string,
 ): Promise<AiResponse<any>> {
   const startTime = performance.now()
   let apiKey = customApiKey || await getSettingByKey('GEMINI_API_KEY')
@@ -254,7 +255,7 @@ export async function generateOutline(
   if (!apiKey) throw new Error('Gemini API key is not configured in settings or environment variables')
 
   const genAI = new GoogleGenerativeAI(apiKey)
-  const model = genAI.getGenerativeModel({ model: 'gemini-2.5-flash' })
+  const model = genAI.getGenerativeModel({ model: modelId || 'gemini-2.5-flash' })
 
   const toneInstructions: Record<string, string> = {
     'business': 'Professional, clear, and business-oriented.',
@@ -433,14 +434,14 @@ const COLOR_PALETTES: Record<string, { bg: string; titleColor: string; detailCol
   },
 }
 
-export async function generateSingleSlide(outlineItem: any, colorTheme: string, customApiKey?: string): Promise<AiResponse<any>> {
+export async function generateSingleSlide(outlineItem: any, colorTheme: string, customApiKey?: string, modelId?: string): Promise<AiResponse<any>> {
   const startTime = performance.now()
   let apiKey = customApiKey || await getSettingByKey('GEMINI_API_KEY')
   if (!apiKey) apiKey = process.env.GEMINI_API_KEY ?? null
   if (!apiKey) throw new Error('Gemini API key is not configured in settings or environment variables')
 
   const genAI = new GoogleGenerativeAI(apiKey)
-  const model = genAI.getGenerativeModel({ model: 'gemini-2.5-flash' })
+  const model = genAI.getGenerativeModel({ model: modelId || 'gemini-2.5-flash' })
 
   const palette = COLOR_PALETTES[colorTheme] ?? COLOR_PALETTES['Modern Dark']
 

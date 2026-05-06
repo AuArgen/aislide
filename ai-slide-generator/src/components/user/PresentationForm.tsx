@@ -4,7 +4,7 @@ import { useState, useEffect, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import { generateOutlineAction, generateSingleSlideAction } from '@/lib/actions/gemini'
 import { createPresentation } from '@/lib/actions/user'
-import { useT } from '@/components/shared/LanguageProvider'
+import { useT, useLanguage } from '@/components/shared/LanguageProvider'
 import Link from 'next/link'
 
 const STORAGE_KEY = 'user_gemini_api_key'
@@ -23,6 +23,47 @@ const TEMPLATES = [
   { id: "html_cinematic_minimal", name: "Cinematic Minimal", thumbnail: "https://kimi-img.moonshot.cn/pub/slides/slides-styles/html_cinematic_minimal_en_01.jpg?x-oss-process=image/resize,w_300", payload: { tone: "creative", audience: "General", colorTheme: "Modern Dark" } },
   { id: "html_8_bit_pixel", name: "8-bit Pixel", thumbnail: "https://kimi-img.moonshot.cn/pub/slides/slides-styles/html_8_bit_pixel_en_01.jpg?x-oss-process=image/resize,w_300", payload: { tone: "school", audience: "Children", colorTheme: "Vibrant Warm" } },
 ]
+
+const GEMINI_MODELS = [
+  {
+    id: 'gemini-2.5-flash',
+    label: 'Gemini 2.5 Flash',
+    tagKey: 'form.modelFast' as const,
+    tagColor: 'bg-emerald-100 text-emerald-700',
+    desc: { ky: 'Тез жана үнөмдүү. Көпчүлүк презентациялар үчүн идеал. Арзан баа.', ru: 'Быстрая и эффективная. Идеальна для большинства. Низкая стоимость.', en: 'Fast and cost-efficient. Ideal for most presentations. Low cost.' },
+    icon: '⚡',
+    badge: null,
+  },
+  {
+    id: 'gemini-3-flash-preview',
+    label: 'Gemini 3 Flash',
+    tagKey: 'form.modelBalanced' as const,
+    tagColor: 'bg-blue-100 text-blue-700',
+    desc: { ky: 'Жаңы муун. Чоң моделдерге теңелген сапат, арзан баада. Татаал темалар үчүн.', ru: 'Новое поколение. Качество топ-моделей по доступной цене. Для сложных тем.', en: 'New generation. Frontier-class performance at a fraction of the cost.' },
+    icon: '🚀',
+    badge: 'NEW',
+  },
+  {
+    id: 'gemini-2.5-pro',
+    label: 'Gemini 2.5 Pro',
+    tagKey: 'form.modelPowerful' as const,
+    tagColor: 'bg-purple-100 text-purple-700',
+    desc: { ky: 'Татаал иштер үчүн. Терең ой жүгүртүү жана деталдуу структура. Баасы жогору.', ru: 'Для сложных задач. Глубокое мышление и детальная структура. Выше стоимость.', en: 'For complex tasks. Deep reasoning and detailed structure. Higher cost.' },
+    icon: '🧠',
+    badge: null,
+  },
+  {
+    id: 'gemini-3.1-pro-preview',
+    label: 'Gemini 3.1 Pro',
+    tagKey: 'form.modelPowerful' as const,
+    tagColor: 'bg-violet-100 text-violet-700',
+    desc: { ky: 'Эң акыркы жана эң күчтүү. Максималдуу сапат. Эң жогорку баа.', ru: 'Новейший и самый мощный. Максимальное качество. Самая высокая стоимость.', en: 'Latest and most powerful. Maximum quality. Highest cost.' },
+    icon: '👑',
+    badge: 'NEW',
+  },
+] as const
+
+type GeminiModelId = typeof GEMINI_MODELS[number]['id']
 
 type WizardStep = 'input' | 'outline' | 'generating'
 
@@ -51,6 +92,7 @@ interface PresentationFormProps {
 
 export function PresentationForm({ userId, canGenerate }: PresentationFormProps) {
   const t = useT()
+  const { language } = useLanguage()
   const router = useRouter()
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
@@ -62,6 +104,7 @@ export function PresentationForm({ userId, canGenerate }: PresentationFormProps)
   const [showApiKey, setShowApiKey] = useState(false)
   const [isAdvancedOpen, setIsAdvancedOpen] = useState(false)
   const [attachedFiles, setAttachedFiles] = useState<AttachedFile[]>([])
+  const [selectedModel, setSelectedModel] = useState<GeminiModelId>('gemini-2.5-flash')
   const [isLoadingOutline, setIsLoadingOutline] = useState(false)
 
   const [outline, setOutline] = useState<OutlineItem[]>([])
@@ -168,6 +211,7 @@ export function PresentationForm({ userId, canGenerate }: PresentationFormProps)
         customApiKey || undefined,
         buildTextContext(),
         imageFiles.length ? imageFiles : undefined,
+        selectedModel,
       )
       if (!result.success || !result.data) {
         const errCode = result.error as string
@@ -204,7 +248,10 @@ export function PresentationForm({ userId, canGenerate }: PresentationFormProps)
         setProgress(i)
         const res = await generateSingleSlideAction(
           outline[i], template.payload.colorTheme,
-          customApiKey || undefined
+          customApiKey || undefined,
+          undefined,
+          undefined,
+          selectedModel,
         )
         if (!res.success || !res.data) {
           const errCode = res.error as string
@@ -658,7 +705,56 @@ export function PresentationForm({ userId, canGenerate }: PresentationFormProps)
           </button>
 
           {isAdvancedOpen && (
-            <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 gap-4 bg-gray-50 p-5 rounded-2xl border border-gray-100">
+            <div className="mt-4 flex flex-col gap-4 bg-gray-50 p-5 rounded-2xl border border-gray-100">
+
+              {/* Model selector */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  {t('form.aiModel')}
+                </label>
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                  {GEMINI_MODELS.map(m => {
+                    const isSelected = selectedModel === m.id
+                    return (
+                      <button
+                        key={m.id}
+                        type="button"
+                        onClick={() => setSelectedModel(m.id)}
+                        disabled={isLoadingOutline}
+                        className={`relative flex flex-col gap-1.5 text-left px-3 py-3 rounded-xl border-2 transition-all duration-150 ${
+                          isSelected
+                            ? 'border-blue-500 bg-blue-50'
+                            : 'border-gray-200 bg-white hover:border-blue-300 hover:bg-blue-50/40'
+                        } disabled:opacity-50`}
+                      >
+                        {m.badge && (
+                          <span className="absolute -top-2 -right-2 text-[9px] font-black px-1.5 py-0.5 rounded-full bg-orange-500 text-white shadow-sm">
+                            {m.badge}
+                          </span>
+                        )}
+                        <div className="flex items-start justify-between gap-1">
+                          <span className="text-sm font-semibold text-gray-800 leading-tight">
+                            {m.icon} {m.label}
+                          </span>
+                        </div>
+                        <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full self-start ${m.tagColor}`}>
+                          {t(m.tagKey)}
+                        </span>
+                        <p className="text-[11px] text-gray-500 leading-snug">
+                          {m.desc[language as 'ky' | 'ru' | 'en'] ?? m.desc.en}
+                        </p>
+                        {isSelected && (
+                          <span className="text-[10px] font-mono text-blue-600 bg-blue-100 px-1.5 py-0.5 rounded self-start truncate max-w-full">
+                            {m.id}
+                          </span>
+                        )}
+                      </button>
+                    )
+                  })}
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1.5">
                   {t('form.slideCount')}
@@ -718,6 +814,7 @@ export function PresentationForm({ userId, canGenerate }: PresentationFormProps)
                   </svg>
                   {t('form.getApiKey')}
                 </a>
+              </div>
               </div>
             </div>
           )}
