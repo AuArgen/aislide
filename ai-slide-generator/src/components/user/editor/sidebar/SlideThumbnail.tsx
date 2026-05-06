@@ -1,6 +1,6 @@
 'use client'
 
-import { EyeOff } from 'lucide-react'
+import { EyeOff, Loader2 } from 'lucide-react'
 import type { Slide } from '@/types/elements'
 import { isText, isShape } from '@/types/elements'
 import { useT } from '@/components/shared/LanguageProvider'
@@ -26,10 +26,12 @@ interface SlideThumbnailProps {
   index: number
   isActive: boolean
   isDragging?: boolean
+  isRegenerating?: boolean
   onSelect: () => void
   onDuplicate: () => void
   onDelete: () => void
   onToggleHide: () => void
+  onSlideContextMenu?: (x: number, y: number) => void
   /** Called when pointer down on the drag handle — caller attaches DnD */
   onDragHandlePointerDown?: (e: React.PointerEvent) => void
 }
@@ -39,10 +41,12 @@ export function SlideThumbnail({
   index,
   isActive,
   isDragging,
+  isRegenerating,
   onSelect,
   onDuplicate,
   onDelete,
   onToggleHide,
+  onSlideContextMenu,
   onDragHandlePointerDown,
 }: SlideThumbnailProps) {
   const t = useT()
@@ -57,6 +61,11 @@ export function SlideThumbnail({
         slide.isHidden ? 'opacity-50' : '',
       ].join(' ')}
       onClick={onSelect}
+      onContextMenu={e => {
+        e.preventDefault()
+        e.stopPropagation()
+        onSlideContextMenu?.(e.clientX, e.clientY)
+      }}
     >
       {/* ── Thumbnail canvas (live-ish miniature) ── */}
       <div
@@ -97,6 +106,14 @@ export function SlideThumbnail({
       >
         {index + 1}
       </div>
+
+      {/* ── Regenerating overlay ── */}
+      {isRegenerating && (
+        <div className="absolute inset-0 bg-white/80 flex flex-col items-center justify-center z-10 rounded-xl">
+          <Loader2 size={18} className="animate-spin text-blue-500 mb-1" />
+          <span className="text-[8px] font-semibold text-blue-500">{t('editor.ctxRegenerating')}</span>
+        </div>
+      )}
 
       {/* ── Hidden badge ── */}
       {slide.isHidden && (

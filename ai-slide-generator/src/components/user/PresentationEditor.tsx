@@ -1069,8 +1069,7 @@ function PresentationEditorInner({
           x={contextMenu.x}
           y={contextMenu.y}
           onClose={() => setContextMenu(null)}
-          onAction={(action) => {
-            setContextMenu(null)
+          onAction={(action, data) => {
             switch (action) {
               case 'undo': useSlidesStore.getState().undo(); break;
               case 'redo': useSlidesStore.getState().redo(); break;
@@ -1084,12 +1083,58 @@ function PresentationEditorInner({
               case 'delete': selectedIds.forEach(id => removeElement(id)); break;
               case 'bringForward': handleBringForward(); break;
               case 'sendBackward': handleSendBackward(); break;
+              case 'text-size':
+                if (selectedElement && isText(selectedElement))
+                  updateElement(selectedElement.id, { fontSize: data.size } as any)
+                break;
+              case 'text-bold':
+                if (selectedElement && isText(selectedElement))
+                  updateElement(selectedElement.id, {
+                    fontWeight: selectedElement.fontWeight === 'bold' ? 'normal' : 'bold',
+                  } as any)
+                break;
+              case 'text-italic':
+                if (selectedElement && isText(selectedElement))
+                  updateElement(selectedElement.id, {
+                    fontStyle: selectedElement.fontStyle === 'italic' ? 'normal' : 'italic',
+                  } as any)
+                break;
+              case 'text-underline':
+                if (selectedElement && isText(selectedElement))
+                  updateElement(selectedElement.id, {
+                    textDecoration: selectedElement.textDecoration === 'underline' ? 'none' : 'underline',
+                  } as any)
+                break;
+              case 'text-align':
+                if (selectedElement && isText(selectedElement))
+                  updateElement(selectedElement.id, { align: data.align } as any)
+                break;
+              case 'text-color':
+                if (selectedElement && isText(selectedElement))
+                  updateElement(selectedElement.id, { color: data.color } as any)
+                break;
+              case 'shape-fill':
+                if (selectedElement && isShape(selectedElement))
+                  updateElement(selectedElement.id, { fill: data.color } as any)
+                break;
+              case 'replace-image':
+                setShowImageUploader(true)
+                break;
+              case 'bg-color':
+                if (currentSlide)
+                  useSlidesStore.getState().setSlideBackground(currentSlide.id, {
+                    type: data.type as 'solid' | 'gradient',
+                    value: data.value,
+                  })
+                break;
             }
           }}
           hasSelection={selectedIds.length > 0}
           hasClipboard={useEditorStore.getState().clipboard.length > 0}
           canUndo={useSlidesStore.getState().history.length > 0}
           canRedo={useSlidesStore.getState().future.length > 0}
+          selectedElement={selectedElement}
+          currentSlide={currentSlide}
         />
       )}
 
@@ -1097,6 +1142,7 @@ function PresentationEditorInner({
       <SlideSidebarPanel
         isSaving={isSavingRef.current}
         presentationId={initialPresentation.id}
+        presentationTheme={initialPresentation.theme}
         onExport={handleExport}
         isExporting={isExporting}
         onCopyShareLink={() => {
@@ -1586,6 +1632,24 @@ function PresentationEditorInner({
                 id="slide-canvas"
                 onContextMenu={(e) => {
                   e.preventDefault()
+                  // Auto-select element under cursor before showing menu
+                  if (canvasRef.current) {
+                    const canvasRect = canvasRef.current.getBoundingClientRect()
+                    const pos = clientToCanvas(e.clientX, e.clientY, canvasRect, CANVAS_W, CANVAS_H)
+                    const elements = currentSlide?.elements ?? []
+                    let hit: SlideElement | null = null
+                    for (let i = elements.length - 1; i >= 0; i--) {
+                      const el = elements[i]
+                      if (el.visible === false) continue
+                      const ex = el.x ?? 0, ey = el.y ?? 0
+                      const ew = el.width ?? 0, eh = el.height ?? 0
+                      if (pos.x >= ex && pos.x <= ex + ew && pos.y >= ey && pos.y <= ey + eh) {
+                        hit = el; break
+                      }
+                    }
+                    if (hit) selectIds([hit.id])
+                    else clearSelection()
+                  }
                   setContextMenu({ x: e.clientX, y: e.clientY })
                 }}
                 style={{

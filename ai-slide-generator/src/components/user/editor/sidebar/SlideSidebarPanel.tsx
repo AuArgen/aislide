@@ -1,7 +1,7 @@
 'use client'
 
 import { useRef, useState, useCallback, useEffect } from 'react'
-import { Plus, Layout, Home } from 'lucide-react'
+import { Plus, Layout, Home, RefreshCw, CopyPlus, Trash2, X, AlertTriangle } from 'lucide-react'
 import Link from 'next/link'
 import { useSlidesStore } from '@/store/slidesStore'
 import { SlideThumbnail } from './SlideThumbnail'
@@ -9,10 +9,12 @@ import { useSlideHotkeys } from '@/lib/hooks/useSlideHotkeys'
 import { presentationTemplates } from '@/lib/templates'
 import type { Slide, SlideLayoutType } from '@/types/elements'
 import { useT } from '@/components/shared/LanguageProvider'
+import { generateSingleSlideAction } from '@/lib/actions/gemini'
 
 interface SlideSidebarPanelProps {
   isSaving: boolean
   presentationId: string
+  presentationTheme: string
   onExport: (type: 'pptx' | 'pdf') => void
   isExporting: boolean
   onCopyShareLink: () => void
@@ -30,6 +32,7 @@ const EDGE_SCROLL_SPEED = 6   // px per frame
 export function SlideSidebarPanel({
   isSaving,
   presentationId,
+  presentationTheme,
   onExport,
   isExporting,
   onCopyShareLink,
@@ -48,6 +51,72 @@ export function SlideSidebarPanel({
   const [showLayoutMenu, setShowLayoutMenu] = useState(false)
   const rafRef = useRef<number | null>(null)
   const pointerYRef = useRef(0)
+
+  // ── Slide context menu ─────────────────────────────────────────────────────
+  const [slideCtxMenu, setSlideCtxMenu] = useState<{ x: number; y: number; slideId: string } | null>(null)
+  const [regeneratingSlideId, setRegeneratingSlideId] = useState<string | null>(null)
+  const [regenError, setRegenError] = useState<'rate-limit' | 'general' | null>(null)
+  const slideCtxMenuRef = useRef<HTMLDivElement>(null)
+  const regenErrorTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  useEffect(() => {
+    if (!slideCtxMenu) return
+    const close = (e: MouseEvent) => {
+      if (slideCtxMenuRef.current && !slideCtxMenuRef.current.contains(e.target as Node))
+        setSlideCtxMenu(null)
+    }
+    document.addEventListener('mousedown', close, true)
+    return () => document.removeEventListener('mousedown', close, true)
+  }, [slideCtxMenu])
+
+  const showRegenError = useCallback((kind: 'rate-limit' | 'general') => {
+    if (regenErrorTimerRef.current) clearTimeout(regenErrorTimerRef.current)
+    setRegenError(kind)
+    regenErrorTimerRef.current = setTimeout(() => setRegenError(null), 8000)
+  }, [])
+
+  useEffect(() => () => { if (regenErrorTimerRef.current) clearTimeout(regenErrorTimerRef.current) }, [])
+
+  const handleRegenerateSlide = useCallback(async (slideId: string) => {
+    setSlideCtxMenu(null)
+    setRegenError(null)
+    setRegeneratingSlideId(slideId)
+    try {
+      const slide = useSlidesStore.getState().slides.find(s => s.id === slideId)
+      if (!slide) return
+      const slideIndex = useSlidesStore.getState().slides.findIndex(s => s.id === slideId)
+      const outlineItem = {
+        title: slide.title,
+        coreMessage: slide.speakerNotes?.trim() || slide.title,
+        suggestedVisual: '',
+      }
+      const result = await generateSingleSlideAction(
+        outlineItem,
+        presentationTheme || 'Modern Dark',
+        undefined,
+        presentationId,
+        slideIndex,
+      )
+      if (result.success && result.data) {
+        const d = result.data as Partial<Slide>
+        updateSlide(slideId, {
+          title: d.title ?? slide.title,
+          elements: d.elements ?? [],
+          // Preserve the slide's existing background and colors — only content changes
+          bg: slide.bg,
+          background: slide.background,
+          titleColor: slide.titleColor,
+        })
+      } else {
+        const err = (result as any).error as string
+        showRegenError(err === 'RATE_LIMIT' ? 'rate-limit' : 'general')
+      }
+    } catch {
+      showRegenError('general')
+    } finally {
+      setRegeneratingSlideId(null)
+    }
+  }, [presentationId, presentationTheme, updateSlide, showRegenError])
 
   // ── Drag-and-drop ─────────────────────────────────────────────────────────────
   const handleDragHandlePointerDown = useCallback(
@@ -175,6 +244,28 @@ export function SlideSidebarPanel({
         </div>
       </div>
 
+      {/* ── Regeneration error banner ── */}
+      {regenError && (
+        <div className={`mx-2 mt-2 px-3 py-2 rounded-lg text-[11px] font-medium flex items-start gap-2 shrink-0 ${
+          regenError === 'rate-limit'
+            ? 'bg-amber-50 border border-amber-200 text-amber-800'
+            : 'bg-red-50 border border-red-200 text-red-700'
+        }`}>
+          <AlertTriangle size={13} className="mt-0.5 shrink-0" />
+          <span className="flex-1">
+            {regenError === 'rate-limit'
+              ? t('editor.regenRateLimit')
+              : t('editor.regenError')}
+          </span>
+          <button
+            onClick={() => setRegenError(null)}
+            className="shrink-0 opacity-60 hover:opacity-100 transition-opacity"
+          >
+            <X size={12} />
+          </button>
+        </div>
+      )}
+
       {/* ── Export ── */}
       <div className="px-3 py-2.5 border-b border-gray-100 space-y-1.5 shrink-0">
         <div className="grid grid-cols-2 gap-1.5">
@@ -215,10 +306,15 @@ export function SlideSidebarPanel({
                 index={i}
                 isActive={slide.id === activeSlideId}
                 isDragging={drag?.draggingIndex === i}
+                isRegenerating={regeneratingSlideId === slide.id}
                 onSelect={() => setActiveSlide(slide.id)}
                 onDuplicate={() => duplicateSlide(slide.id)}
                 onDelete={() => slides.length > 1 && deleteSlide(slide.id)}
                 onToggleHide={() => toggleHideSlide(slide.id)}
+                onSlideContextMenu={(x, y) => {
+                  setActiveSlide(slide.id)
+                  setSlideCtxMenu({ x, y, slideId: slide.id })
+                }}
                 onDragHandlePointerDown={e => handleDragHandlePointerDown(e, i)}
               />
 
@@ -261,6 +357,53 @@ export function SlideSidebarPanel({
           ))}
         </div>
       </div>
+      {/* ── Slide context menu ── */}
+      {slideCtxMenu && (() => {
+        const menuW = 200
+        const menuH = 130
+        const adjustedX = slideCtxMenu.x + menuW > window.innerWidth ? slideCtxMenu.x - menuW : slideCtxMenu.x
+        const adjustedY = slideCtxMenu.y + menuH > window.innerHeight ? slideCtxMenu.y - menuH : slideCtxMenu.y
+        const canDeleteSlide = slides.length > 1
+        return (
+          <div
+            ref={slideCtxMenuRef}
+            className="fixed z-[9999] bg-white border border-gray-200 shadow-xl rounded-lg py-1.5 w-[200px] text-sm font-medium text-gray-700 select-none"
+            style={{ top: adjustedY, left: adjustedX }}
+            onContextMenu={e => e.preventDefault()}
+          >
+            <button
+              onClick={() => handleRegenerateSlide(slideCtxMenu.slideId)}
+              className="w-full flex items-center gap-2.5 px-4 py-2 text-left hover:bg-blue-50 hover:text-blue-700 transition-colors"
+            >
+              <RefreshCw size={14} className="text-blue-500" />
+              <span>{t('editor.ctxRegenSlide')}</span>
+            </button>
+            <div className="h-px bg-gray-200 my-1 mx-2" />
+            <button
+              onClick={() => { duplicateSlide(slideCtxMenu.slideId); setSlideCtxMenu(null) }}
+              className="w-full flex items-center gap-2.5 px-4 py-2 text-left hover:bg-gray-100 transition-colors"
+            >
+              <CopyPlus size={14} className="text-gray-500" />
+              <span>{t('editor.ctxDuplicate')}</span>
+            </button>
+            <button
+              onClick={() => {
+                if (canDeleteSlide) deleteSlide(slideCtxMenu.slideId)
+                setSlideCtxMenu(null)
+              }}
+              disabled={!canDeleteSlide}
+              className={`w-full flex items-center gap-2.5 px-4 py-2 text-left transition-colors ${
+                canDeleteSlide
+                  ? 'hover:bg-red-50 text-red-600'
+                  : 'opacity-40 cursor-not-allowed text-gray-400'
+              }`}
+            >
+              <Trash2 size={14} />
+              <span>{t('editor.ctxDelete')}</span>
+            </button>
+          </div>
+        )
+      })()}
     </div>
   )
 }
