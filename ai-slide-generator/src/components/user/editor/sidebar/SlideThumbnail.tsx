@@ -3,6 +3,7 @@
 import { EyeOff } from 'lucide-react'
 import type { Slide } from '@/types/elements'
 import { isText, isShape } from '@/types/elements'
+import { useT } from '@/components/shared/LanguageProvider'
 
 function buildSlideStyle(slide: Slide): React.CSSProperties {
   const base: React.CSSProperties = {}
@@ -44,6 +45,7 @@ export function SlideThumbnail({
   onToggleHide,
   onDragHandlePointerDown,
 }: SlideThumbnailProps) {
+  const t = useT()
   return (
     <div
       className={[
@@ -116,14 +118,14 @@ export function SlideThumbnail({
       {/* ── Action buttons (duplicate / delete / hide) ── */}
       <div className="absolute bottom-1 right-1 opacity-0 group-hover:opacity-100 transition-opacity flex gap-1">
         <button
-          title={slide.isHidden ? 'Слайдды көрсөтүү' : 'Слайдды жашыруу'}
+          title={slide.isHidden ? t('editor.thumbShow') : t('editor.thumbHide')}
           onClick={e => { e.stopPropagation(); onToggleHide() }}
           className="w-5 h-5 bg-white/90 rounded text-gray-500 flex items-center justify-center hover:bg-white shadow-sm text-[9px] font-bold"
         >
           {slide.isHidden ? '👁' : <EyeOff size={9} />}
         </button>
         <button
-          title="Көчүрүү"
+          title={t('editor.thumbDuplicate')}
           onClick={e => { e.stopPropagation(); onDuplicate() }}
           className="w-5 h-5 bg-white/90 rounded text-gray-600 flex items-center justify-center hover:bg-white shadow-sm"
         >
@@ -132,7 +134,7 @@ export function SlideThumbnail({
           </svg>
         </button>
         <button
-          title="Өчүрүү"
+          title={t('editor.thumbDelete')}
           onClick={e => { e.stopPropagation(); onDelete() }}
           className="w-5 h-5 bg-white/90 rounded text-red-500 flex items-center justify-center hover:bg-white shadow-sm"
         >

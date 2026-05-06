@@ -8,6 +8,7 @@ import { SlideThumbnail } from './SlideThumbnail'
 import { useSlideHotkeys } from '@/lib/hooks/useSlideHotkeys'
 import { presentationTemplates } from '@/lib/templates'
 import type { Slide, SlideLayoutType } from '@/types/elements'
+import { useT } from '@/components/shared/LanguageProvider'
 
 interface SlideSidebarPanelProps {
   isSaving: boolean
@@ -33,6 +34,7 @@ export function SlideSidebarPanel({
   isExporting,
   onCopyShareLink,
 }: SlideSidebarPanelProps) {
+  const t = useT()
   const {
     slides, activeSlideId,
     setActiveSlide, addSlide, deleteSlide, duplicateSlide,
@@ -124,21 +126,21 @@ export function SlideSidebarPanel({
     <div data-sidebar-panel className="w-[220px] shrink-0 bg-white border-r border-gray-200 flex flex-col shadow-sm">
       <div className="px-3 py-2 border-b border-gray-100 flex flex-col gap-2 shrink-0">
         <Link href="/dashboard" className="flex items-center gap-1.5 text-[11px] font-bold text-gray-500 hover:text-blue-600 transition-colors bg-gray-50 hover:bg-blue-50 px-2 py-1.5 rounded-lg w-max">
-          <Home size={12} /> Башкы бет
+          <Home size={12} /> {t('editor.backHome')}
         </Link>
         <div className="flex items-center justify-between">
-          <h3 className="font-bold text-gray-700 text-sm">Слайддар</h3>
+          <h3 className="font-bold text-gray-700 text-sm">{t('editor.slides')}</h3>
           <div className="flex items-center gap-2">
             <span
               className={`text-[10px] px-2 py-0.5 rounded-full font-medium transition-all ${isSaving ? 'bg-blue-100 text-blue-600 animate-pulse' : 'bg-gray-100 text-gray-400'
                 }`}
             >
-              {isSaving ? 'Сакталууда...' : 'Сакталды'}
+              {isSaving ? t('editor.saving') : t('editor.saved')}
             </span>
             {/* Add slide — click opens layout picker */}
             <div className="relative">
               <button
-                title="Слайд кошуу"
+                title={t('editor.addSlideTooltip')}
                 onClick={() => setShowLayoutMenu(m => !m)}
                 className="w-7 h-7 bg-blue-500 hover:bg-blue-600 text-white rounded-lg flex items-center justify-center transition-colors"
               >
@@ -148,10 +150,10 @@ export function SlideSidebarPanel({
                 <div className="absolute top-full right-0 mt-1 z-50 bg-white rounded-xl shadow-xl border border-gray-100 overflow-hidden min-w-[150px]">
                   {(
                     [
-                      { key: 'blank' as SlideLayoutType, label: '⬜ Бош слайд' },
-                      { key: 'title' as SlideLayoutType, label: '📋 Аталыш' },
-                      { key: 'title-body' as SlideLayoutType, label: '📄 Аталыш + Текст' },
-                      { key: 'two-column' as SlideLayoutType, label: '⣿ Эки мамыча' },
+                      { key: 'blank' as SlideLayoutType, label: `⬜ ${t('editor.layoutBlank')}` },
+                      { key: 'title' as SlideLayoutType, label: `📋 ${t('editor.layoutTitle')}` },
+                      { key: 'title-body' as SlideLayoutType, label: `📄 ${t('editor.layoutTitleBody')}` },
+                      { key: 'two-column' as SlideLayoutType, label: `⣿ ${t('editor.layoutTwoCol')}` },
                     ] as { key: SlideLayoutType; label: string }[]
                   ).map(({ key, label }) => (
                     <button
@@ -187,7 +189,7 @@ export function SlideSidebarPanel({
         </div>
         <button onClick={onCopyShareLink}
           className="w-full text-[11px] bg-indigo-600 text-white px-2 py-1.5 rounded-lg font-semibold hover:bg-indigo-700 transition-all flex items-center justify-center gap-1">
-          🔗 Бөлүшүү
+          🔗 {t('editor.share')}
         </button>
       </div>
 
@@ -230,22 +232,22 @@ export function SlideSidebarPanel({
 
         {/* ── Slide count footer ── */}
         <p className="text-center text-[10px] text-gray-400 mt-1 font-medium">
-          {activeIndex + 1} / {slides.length} слайд
+          {t('editor.slideCounter', { n: activeIndex + 1, total: slides.length })}
         </p>
       </div>
 
       {/* ── Templates ── */}
       <div className="px-3 py-2.5 border-t border-gray-100 shrink-0">
         <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-2 flex items-center gap-1">
-          <Layout size={10} /> Калыптар
+          <Layout size={10} /> {t('editor.templates')}
         </p>
         <div className="space-y-1">
-          {presentationTemplates.map(t => (
+          {presentationTemplates.map(tmpl => (
             <button
-              key={t.id}
+              key={tmpl.id}
               onClick={() => {
-                const tp = presentationTemplates.find(x => x.id === t.id)
-                if (tp && confirm('Слайддар алмаштырылат. Улантасызбы?')) {
+                const tp = presentationTemplates.find(x => x.id === tmpl.id)
+                if (tp && confirm(t('editor.confirmTemplate'))) {
                   // Replace all slides via updateSlide store; we hydrate ids via initSlides
                   useSlidesStore.getState().initSlides(
                     (tp.slides as unknown as Slide[]).map(s => ({ ...s, id: s.id || Math.random().toString(36).substr(2, 9) }))
@@ -254,7 +256,7 @@ export function SlideSidebarPanel({
               }}
               className="w-full text-left px-2 py-1.5 rounded-lg hover:bg-gray-100 text-[11px] font-semibold text-gray-600 transition-colors"
             >
-              {t.name}
+              {t(tmpl.nameKey as Parameters<typeof t>[0])}
             </button>
           ))}
         </div>

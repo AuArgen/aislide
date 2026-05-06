@@ -1101,7 +1101,7 @@ function PresentationEditorInner({
         isExporting={isExporting}
         onCopyShareLink={() => {
           navigator.clipboard.writeText(`${window.location.origin}/presentation/${initialPresentation.id}`)
-          alert('Шилтеме көчүрүлдү!')
+          alert(t('editor.linkCopied'))
         }}
       />
 
@@ -1111,19 +1111,19 @@ function PresentationEditorInner({
         {/* ── Recovery banner ── */}
         {recoverAvailable && (
           <div className="shrink-0 flex items-center justify-between bg-amber-50 border-b border-amber-200 px-4 py-2 z-50">
-            <span className="text-xs font-semibold text-amber-800">⚠️ Сакталбаган жергиликтүү өзгөртүүлөр табылды. Калыбына келтирүүнү каалайсызбы?</span>
+            <span className="text-xs font-semibold text-amber-800">⚠️ {t('editor.unsavedChanges')}</span>
             <div className="flex gap-2">
               <button
                 onClick={handleRecover}
                 className="px-3 py-1 rounded-lg bg-amber-500 hover:bg-amber-600 text-white text-xs font-bold transition-colors"
               >
-                Калыбына келтир
+                {t('editor.restore')}
               </button>
               <button
                 onClick={handleDismissRecovery}
                 className="px-3 py-1 rounded-lg bg-white hover:bg-amber-100 border border-amber-300 text-amber-700 text-xs font-semibold transition-colors"
               >
-                Жок
+                {t('editor.dismiss')}
               </button>
             </div>
           </div>
@@ -1140,18 +1140,18 @@ function PresentationEditorInner({
               <p className="text-[9px] font-bold text-gray-400 uppercase tracking-wider mb-2">{t('editor.insertShape')}</p>
               <div className="grid grid-cols-3 gap-1.5">
                 {([
-                  { kind: 'rect', label: 'Тик бурч', emoji: '▭' },
-                  { kind: 'circle', label: 'Тегерек', emoji: '⬤' },
-                  { kind: 'triangle', label: 'Үч бурч', emoji: '▲' },
-                  { kind: 'diamond', label: 'Ромб', emoji: '◆' },
-                  { kind: 'star', label: 'Жылдыз', emoji: '★' },
-                  { kind: 'hexagon', label: 'Алтыбурч', emoji: '⬡' },
-                  { kind: 'arrow-right', label: '→', emoji: '➡' },
-                  { kind: 'arrow-left', label: '←', emoji: '⬅' },
-                  { kind: 'line', label: 'Сызык', emoji: '━' },
-                  { kind: 'speech-bubble', label: 'Сүйлөм', emoji: '💬' },
-                  { kind: 'cloud', label: 'Булут', emoji: '☁' },
-                ] as { kind: import('@/types/elements').ShapeKind; label: string; emoji: string }[]).map(opt => (
+                  { kind: 'rect', labelKey: 'editor.shapeRect', emoji: '▭' },
+                  { kind: 'circle', labelKey: 'editor.shapeCircle', emoji: '⬤' },
+                  { kind: 'triangle', labelKey: 'editor.shapeTriangle', emoji: '▲' },
+                  { kind: 'diamond', labelKey: 'editor.shapeDiamond', emoji: '◆' },
+                  { kind: 'star', labelKey: 'editor.shapeStar', emoji: '★' },
+                  { kind: 'hexagon', labelKey: 'editor.shapeHexagon', emoji: '⬡' },
+                  { kind: 'arrow-right', labelKey: 'editor.shapeArrowRight', emoji: '➡' },
+                  { kind: 'arrow-left', labelKey: 'editor.shapeArrowLeft', emoji: '⬅' },
+                  { kind: 'line', labelKey: 'editor.shapeLine', emoji: '━' },
+                  { kind: 'speech-bubble', labelKey: 'editor.shapeSpeechBubble', emoji: '💬' },
+                  { kind: 'cloud', labelKey: 'editor.shapeCloud', emoji: '☁' },
+                ] as { kind: import('@/types/elements').ShapeKind; labelKey: Parameters<typeof t>[0]; emoji: string }[]).map(opt => (
                   <button
                     key={opt.kind}
                     onClick={() => {
@@ -1159,10 +1159,10 @@ function PresentationEditorInner({
                       setShowShapePicker(false)
                     }}
                     className="flex flex-col items-center gap-1 px-1 py-2 rounded-lg border border-gray-200 hover:bg-indigo-50 hover:border-indigo-300 transition-colors"
-                    title={opt.label}
+                    title={t(opt.labelKey)}
                   >
                     <span className="text-xl leading-none">{opt.emoji}</span>
-                    <span className="text-[9px] text-gray-500 font-medium truncate w-full text-center">{opt.label}</span>
+                    <span className="text-[9px] text-gray-500 font-medium truncate w-full text-center">{t(opt.labelKey)}</span>
                   </button>
                 ))}
               </div>

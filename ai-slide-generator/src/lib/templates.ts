@@ -1,6 +1,7 @@
 export const presentationTemplates = [
     {
         id: 'pitch-deck',
+        nameKey: 'editor.templatePitchDeck',
         name: 'Стартап үчүн Pitch Deck',
         description: 'Инвесторлор үчүн кыска жана эффективдүү презентация',
         slides: [
@@ -13,6 +14,7 @@ export const presentationTemplates = [
     },
     {
         id: 'report',
+        nameKey: 'editor.templateReport',
         name: 'Жылдык отчет',
         description: 'Компаниянын же долбоордун жыйынтыктары',
         slides: [

@@ -70,10 +70,19 @@ export function MyComponent() {
 
 **Language preference storage:** `localStorage` (immediate) + `users.preferred_language` column in SQLite (synced via `/api/user/language`).
 
-**Editor-specific translation keys** live under `editor.*` (e.g. `editor.tabHome`, `editor.insertShape`, `editor.bgColor`). The editor component imports `useT` and uses these keys for all toolbar text.
+**Editor-specific translation keys** live under `editor.*`. All editor components (`PresentationEditor`, `SlideSidebarPanel`, `SlideThumbnail`, `SyncStatusBadge`, `ContextMenu`) use `useT()` — never hardcode strings. Key groups:
+- Toolbar tabs/buttons: `tabHome`, `tabInsert`, `tabDesign`, `tabView`, `insertText`, `insertShape`, etc.
+- Recovery banner: `unsavedChanges`, `restore`, `dismiss`
+- Sync status badge: `saving`, `saved`, `syncUnsaved`, `syncError`, `autoSave`
+- Sidebar: `slides`, `backHome`, `share`, `slideCounter`, `templates`, `confirmTemplate`, `addSlideTooltip`, `layoutBlank`, `layoutTitle`, `layoutTitleBody`, `layoutTwoCol`
+- Template names: `templatePitchDeck`, `templateReport`
+- Shape picker: `shapeRect`, `shapeCircle`, `shapeTriangle`, `shapeDiamond`, `shapeStar`, `shapeHexagon`, `shapeArrowRight`, `shapeArrowLeft`, `shapeLine`, `shapeSpeechBubble`, `shapeCloud`
+- Context menu: `ctxUndo`, `ctxRedo`, `ctxCut`, `ctxCopy`, `ctxPaste`, `ctxDuplicate`, `ctxBringForward`, `ctxSendBackward`, `ctxDelete`
+- Thumbnail: `thumbShow`, `thumbHide`, `thumbDuplicate`, `thumbDelete`
+- Misc: `linkCopied`, `loading`, `emptyCanvas`, `layers`, `togglePanel`, `fillColor`, `fill`, `strokeColor`, `stroke`, `customColor`, `applyBgAll`
 
 **Wizard-specific translation keys** added under `form.*`:
-`createOutline`, `outlineReady`, `outlineSubtitle`, `coreMessage`, `slideTitle`, `regenerateOutline`, `backToInput`, `generateFromOutline`, `attachFile`, `attachedFiles`, `removeFile`.
+`createOutline`, `outlineReady`, `outlineSubtitle`, `coreMessage`, `slideTitle`, `regenerateOutline`, `backToInput`, `generateFromOutline`, `attachFile`, `attachedFiles`, `removeFile`, `rateLimitError`, `rateLimitHint`, `getApiKey`, `apiKeyHint`, `invalidApiKeyError`.
 
 ### Authentication
 
@@ -107,7 +116,7 @@ Business logic uses **Server Actions** (`'use server'`) in `src/lib/actions/`:
 - `logs.ts` — AI usage audit log (`saveAiLog`, `updateAiLog`)
 
 **API routes** (`src/app/api/`) handle binary/streaming operations and client-initiated actions:
-- `/api/upload` — image uploads to Supabase Storage (`slide-images` bucket)
+- `/api/upload` — local image upload (`POST`, field name **`image`**). Saves to `public/uploads/` and returns `{ url }`. **Important:** the form field must be named `image`, not `file`.
 - `/api/generate-image` — Gemini image generation
 - `/api/stock-images` — proxy for Unsplash/Pexels queries
 - `/api/bg-remove` — background removal
@@ -140,7 +149,7 @@ Business logic uses **Server Actions** (`'use server'`) in `src/lib/actions/`:
 
 Text files are passed as `fileContext` (plain text) to the outline prompt — AI uses them to inform slide content.
 
-Images are passed separately as `imageFiles: Array<{ filename, url }>`. The outline prompt asks AI to decide for each image:
+Images are uploaded via `POST /api/upload` (form field: `image`) before the outline call. The returned URL is stored in `AttachedFile.content`. Images are passed as `imageFiles: Array<{ filename, url }>`. The outline prompt asks AI to decide for each image:
 
 | Decision | When AI uses it | Effect |
 |---|---|---|
@@ -166,6 +175,11 @@ Wizard flow:
 6. Redirect to `/editor/[id]`
 
 Any element `src` or slide `background` starting with `stock:<query>` is resolved to a real URL via `getRandomStockImage` from `src/lib/images.ts` (inside `generateSingleSlideAction`).
+
+**Gemini error types** — `src/lib/gemini.ts` throws structured JSON errors that actions parse and forward to the client as typed error codes:
+- `RATE_LIMIT` — HTTP 429 (free quota exceeded). `PresentationForm` shows an amber banner with a link to `aistudio.google.com/api-keys` and auto-opens Advanced Settings so the user can paste their own key.
+- `INVALID_API_KEY` — HTTP 400/403 with API_KEY/invalid in the message. Shows a red error.
+- Actions return `{ success: false, error: 'RATE_LIMIT' | 'INVALID_API_KEY' | string }`. The form checks `res.error === 'RATE_LIMIT'` to distinguish typed errors from plain messages. Entering a new API key clears the banner.
 
 Gemini is called with the API key loaded at runtime from the `settings` table (not just env), so key changes take effect without redeploy.
 
@@ -299,6 +313,6 @@ DATABASE_PATH             # Optional; defaults to ./data/app.db
 - `@/*` path alias maps to `src/*` (configured in `tsconfig.json`).
 - Admin-only pages (`/admin/*`) require `role === 'admin'`; middleware redirects unauthorized users to `/`.
 - Telegram notifications fire on payment approval/rejection via `src/lib/telegram.ts`.
-- `src/lib/geminiLayouts.ts` and `src/lib/templates.ts` define the prompt templates and layout schemas sent to Gemini.
+- `src/lib/geminiLayouts.ts` and `src/lib/templates.ts` define the prompt templates and layout schemas sent to Gemini. Each entry in `presentationTemplates` has a `nameKey` field (e.g. `'editor.templatePitchDeck'`) — use `t(tmpl.nameKey)` in components instead of `tmpl.name`.
 - Custom scrollbar classes: `custom-scroll` (light, for white areas), `custom-scroll-dark` (dark, for the sidebar).
 - The slide sidebar panel has `data-sidebar-panel` attribute — used by `useSlideHotkeys` to scope Backspace/Delete to slide deletion only when the sidebar has focus.

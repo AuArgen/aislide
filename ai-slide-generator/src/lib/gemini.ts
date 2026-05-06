@@ -219,15 +219,15 @@ JSON Structure:
     const durationMs = performance.now() - startTime
 
     if (error.status === 429 || error.message?.includes('429')) {
-      throw new Error(JSON.stringify({ 
-        message: 'Өтө көп суроо-талап жөнөтүлдү (Rate Limit). Сураныч, бир аздан кийин кайра аракет кылыңыз.',
+      throw new Error(JSON.stringify({
+        type: 'RATE_LIMIT',
         partialMetadata: { tokensUsed: totalTokens, costUsd, durationMs: Math.round(durationMs) }
       }))
     }
 
     if (error.status === 403 || error.status === 400 || error.message?.includes('API_KEY') || error.message?.includes('invalid') || error.message?.includes('not found')) {
       throw new Error(JSON.stringify({
-        message: 'Сиздин API Key жараксыз же иштебейт. Сураныч, текшерип кайра көрүңүз.',
+        type: 'INVALID_API_KEY',
         partialMetadata: { tokensUsed: totalTokens, costUsd, durationMs: Math.round(durationMs) }
       }))
     }
@@ -380,15 +380,15 @@ Return ONLY the following JSON object (no markdown, no extra text):
     const durationMs = performance.now() - startTime
 
     if (error.status === 429 || error.message?.includes('429')) {
-      throw new Error(JSON.stringify({ 
-        message: 'Өтө көп суроо-талап жөнөтүлдү (Rate Limit). Сураныч, бир аздан кийин кайра аракет кылыңыз.',
+      throw new Error(JSON.stringify({
+        type: 'RATE_LIMIT',
         partialMetadata: { tokensUsed: totalTokens, costUsd, durationMs: Math.round(durationMs) }
       }))
     }
 
     if (error.status === 403 || error.status === 400 || error.message?.includes('API_KEY') || error.message?.includes('invalid') || error.message?.includes('not found')) {
       throw new Error(JSON.stringify({
-        message: 'Сиздин API Key жараксыз же иштебейт. Сураныч, текшерип кайра көрүңүз.',
+        type: 'INVALID_API_KEY',
         partialMetadata: { tokensUsed: totalTokens, costUsd, durationMs: Math.round(durationMs) }
       }))
     }
@@ -563,14 +563,14 @@ Return ONLY raw JSON. Do NOT include markdown formatting like \`\`\`json.
     const durationMs = performance.now() - startTime
 
     if (error.status === 429 || error.message?.includes('429')) {
-      throw new Error(JSON.stringify({ 
-        message: 'Өтө көп суроо-талап жөнөтүлдү (Rate Limit). Сураныч, бир аздан кийин кайра аракет кылыңыз.',
+      throw new Error(JSON.stringify({
+        type: 'RATE_LIMIT',
         partialMetadata: { tokensUsed: totalTokens, costUsd, durationMs: Math.round(durationMs) }
       }))
     }
     if (error.status === 403 || error.status === 400 || error.message?.includes('API_KEY') || error.message?.includes('invalid') || error.message?.includes('not found')) {
       throw new Error(JSON.stringify({
-        message: 'Сиздин API Key жараксыз же иштебейт. Сураныч, текшерип кайра көрүңүз.',
+        type: 'INVALID_API_KEY',
         partialMetadata: { tokensUsed: totalTokens, costUsd, durationMs: Math.round(durationMs) }
       }))
     }

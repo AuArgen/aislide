@@ -12,7 +12,8 @@
       "Bash(node -e \"const {DatabaseSync} = require\\('node:sqlite'\\); const db = new DatabaseSync\\('./data/app.db'\\); const pres = db.prepare\\('SELECT id, title, created_at, LENGTH\\(slides\\) as slides_len FROM presentations ORDER BY created_at DESC LIMIT 10'\\).all\\(\\); console.log\\(JSON.stringify\\(pres, null, 2\\)\\);\")",
       "Bash(node -e \"const {DatabaseSync} = require\\('node:sqlite'\\); const db = new DatabaseSync\\('./data/app.db'\\); const slides = db.prepare\\('SELECT slides FROM presentations WHERE id=?'\\).get\\('5794eb93-7b8e-4e28-a9ce-50fd4eb84a7e'\\); const parsed = JSON.parse\\(slides.slides\\); console.log\\('Slides count:', parsed.length\\); console.log\\('First slide elements:', JSON.stringify\\(parsed[0], null, 2\\).substring\\(0, 1000\\)\\);\")",
       "Bash(node -e \"const {DatabaseSync} = require\\('node:sqlite'\\); const db = new DatabaseSync\\('./data/app.db'\\); const slides = db.prepare\\('SELECT slides FROM presentations WHERE id=?'\\).get\\('a354a9bc-4830-4288-bba9-42b0e9779a9c'\\); console.log\\(slides.slides\\);\")",
-      "Bash(node -e ' *)"
+      "Bash(node -e ' *)",
+      "Bash(Get-ChildItem -Path \"C:\\\\OSPanel\\\\home\\\\aislide\\\\ai-slide-generator\\\\src\\\\components\\\\user\\\\editor\\\\\" -Recurse -Filter \"*.tsx\" | Select-Object -ExpandProperty FullName)"
     ]
   }
 }

@@ -70,6 +70,7 @@ export function PresentationForm({ userId, canGenerate }: PresentationFormProps)
   const [progress, setProgress] = useState(0)
   const [totalSteps, setTotalSteps] = useState(1)
   const [error, setError] = useState<string | null>(null)
+  const [errorType, setErrorType] = useState<'RATE_LIMIT' | 'INVALID_API_KEY' | null>(null)
 
   useEffect(() => {
     const stored = localStorage.getItem(STORAGE_KEY)
@@ -80,6 +81,7 @@ export function PresentationForm({ userId, canGenerate }: PresentationFormProps)
   const handleApiKeyChange = (value: string) => {
     setCustomApiKey(value)
     localStorage.setItem(STORAGE_KEY, value)
+    if (errorType) { setErrorType(null); setError(null) }
   }
 
   const handleFileSelect = async (files: FileList | null) => {
@@ -136,7 +138,14 @@ export function PresentationForm({ userId, canGenerate }: PresentationFormProps)
         buildTextContext(),
         imageFiles.length ? imageFiles : undefined,
       )
-      if (!result.success || !result.data) throw new Error(result.error || t('form.errorServer'))
+      if (!result.success || !result.data) {
+        const errCode = result.error as string
+        if (errCode === 'RATE_LIMIT' || errCode === 'INVALID_API_KEY') {
+          setErrorType(errCode)
+          setIsAdvancedOpen(true)
+        }
+        throw new Error(errCode || t('form.errorServer'))
+      }
 
       setOutline(result.data)
       setImageDecisions(result.imageDecisions ?? [])
@@ -166,7 +175,14 @@ export function PresentationForm({ userId, canGenerate }: PresentationFormProps)
           outline[i], template.payload.colorTheme,
           customApiKey || undefined
         )
-        if (!res.success || !res.data) throw new Error(res.error || t('form.errorServer'))
+        if (!res.success || !res.data) {
+          const errCode = res.error as string
+          if (errCode === 'RATE_LIMIT' || errCode === 'INVALID_API_KEY') {
+            setErrorType(errCode)
+            setIsAdvancedOpen(true)
+          }
+          throw new Error(errCode || t('form.errorServer'))
+        }
         slides.push(res.data)
       }
 
@@ -260,7 +276,20 @@ export function PresentationForm({ userId, canGenerate }: PresentationFormProps)
           />
         </div>
         <p className="text-xs text-gray-400 mt-2">{progressPct}%</p>
-        {error && (
+        {error && errorType === 'RATE_LIMIT' && (
+          <div className="mt-6 p-4 bg-amber-50 border border-amber-200 rounded-xl text-sm max-w-sm text-left space-y-2">
+            <p className="text-amber-800 font-medium">{t('form.rateLimitError')}</p>
+            <p className="text-amber-700">{t('form.rateLimitHint')}</p>
+            <a href="https://aistudio.google.com/api-keys" target="_blank" rel="noopener noreferrer"
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-amber-500 hover:bg-amber-600 text-white text-xs font-semibold rounded-lg transition-colors">
+              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+              </svg>
+              {t('form.getApiKey')}
+            </a>
+          </div>
+        )}
+        {error && !errorType && (
           <div className="mt-6 p-4 bg-red-50 border border-red-100 rounded-xl text-sm text-red-700 max-w-sm text-left">
             {error}
           </div>
@@ -396,7 +425,20 @@ export function PresentationForm({ userId, canGenerate }: PresentationFormProps)
         </div>
 
         {/* Error */}
-        {error && (
+        {error && errorType === 'RATE_LIMIT' && (
+          <div className="p-4 bg-amber-50 border border-amber-200 rounded-xl text-sm mb-4 space-y-2">
+            <p className="text-amber-800 font-medium">{t('form.rateLimitError')}</p>
+            <p className="text-amber-700">{t('form.rateLimitHint')}</p>
+            <a href="https://aistudio.google.com/api-keys" target="_blank" rel="noopener noreferrer"
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-amber-500 hover:bg-amber-600 text-white text-xs font-semibold rounded-lg transition-colors">
+              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+              </svg>
+              {t('form.getApiKey')}
+            </a>
+          </div>
+        )}
+        {error && !errorType && (
           <div className="flex items-start gap-3 p-4 bg-red-50 border border-red-100 rounded-xl text-sm text-red-700 mb-4">
             <svg className="w-5 h-5 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
@@ -598,13 +640,56 @@ export function PresentationForm({ userId, canGenerate }: PresentationFormProps)
                     )}
                   </button>
                 </div>
+                <a
+                  href="https://aistudio.google.com/api-keys"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="mt-1.5 flex items-center gap-1 text-xs text-blue-500 hover:text-blue-700 transition-colors"
+                >
+                  <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                  </svg>
+                  {t('form.getApiKey')}
+                </a>
               </div>
             </div>
           )}
         </div>
 
         {/* Error */}
-        {error && (
+        {error && errorType === 'RATE_LIMIT' && (
+          <div className="p-4 bg-amber-50 border border-amber-200 rounded-xl text-sm space-y-2">
+            <div className="flex items-start gap-2.5 text-amber-800 font-medium">
+              <svg className="w-5 h-5 flex-shrink-0 mt-0.5 text-amber-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" />
+              </svg>
+              {t('form.rateLimitError')}
+            </div>
+            <p className="text-amber-700 pl-7">{t('form.rateLimitHint')}</p>
+            <div className="pl-7">
+              <a
+                href="https://aistudio.google.com/api-keys"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-amber-500 hover:bg-amber-600 text-white text-xs font-semibold rounded-lg transition-colors"
+              >
+                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                </svg>
+                {t('form.getApiKey')}
+              </a>
+            </div>
+          </div>
+        )}
+        {error && errorType === 'INVALID_API_KEY' && (
+          <div className="flex items-start gap-3 p-4 bg-red-50 border border-red-100 rounded-xl text-sm text-red-700">
+            <svg className="w-5 h-5 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
+            {t('form.invalidApiKeyError')}
+          </div>
+        )}
+        {error && !errorType && (
           <div className="flex items-start gap-3 p-4 bg-red-50 border border-red-100 rounded-xl text-sm text-red-700">
             <svg className="w-5 h-5 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />

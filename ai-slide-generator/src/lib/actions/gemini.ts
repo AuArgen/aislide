@@ -123,16 +123,18 @@ export async function generateAndSavePresentation(userId: string, prompt: string
 
     let errorMessage = error.message || 'Генерация учурунда ката кетти'
     let partialMetadata = null
+    let errorType: string | undefined
 
     try {
       const errObj = JSON.parse(error.message)
-      errorMessage = errObj.message
+      errorMessage = errObj.message ?? errorMessage
       partialMetadata = errObj.partialMetadata
+      errorType = errObj.type
     } catch (e) {}
 
     if (logId) {
       await updateAiLog(logId, {
-        response: `Error: ${errorMessage}`,
+        response: `Error: ${errorType ?? errorMessage}`,
         is_valid: false,
         tokens_used: partialMetadata?.tokensUsed || 0,
         cost_usd: Number((partialMetadata?.costUsd || 0).toFixed(6)),
@@ -140,7 +142,7 @@ export async function generateAndSavePresentation(userId: string, prompt: string
       }).catch(err => console.error('Failed to update error log:', err))
     }
 
-    return { success: false, error: errorMessage }
+    return { success: false, error: errorType ?? errorMessage }
   }
 }
 
@@ -191,16 +193,18 @@ export async function generateOutlineAction(
 
     let errorMessage = error.message || 'Планды түзүүдө ката кетти'
     let partialMetadata = null
+    let errorType: string | undefined
 
     try {
       const errObj = JSON.parse(error.message)
-      errorMessage = errObj.message
+      errorMessage = errObj.message ?? errorMessage
       partialMetadata = errObj.partialMetadata
+      errorType = errObj.type
     } catch (e) {}
 
     if (logId) {
       await updateAiLog(logId, {
-        response: `Error: ${errorMessage}`,
+        response: `Error: ${errorType ?? errorMessage}`,
         is_valid: false,
         tokens_used: partialMetadata?.tokensUsed || 0,
         cost_usd: Number((partialMetadata?.costUsd || 0).toFixed(6)),
@@ -208,7 +212,7 @@ export async function generateOutlineAction(
       }).catch(err => console.error('Failed to update error log for outline:', err))
     }
 
-    return { success: false, error: errorMessage }
+    return { success: false, error: errorType ?? errorMessage }
   }
 }
 
@@ -296,16 +300,18 @@ export async function generateSingleSlideAction(
 
     let errorMessage = error.message || 'Слайдды түзүүдө ката кетти'
     let partialMetadata = null
+    let errorType: string | undefined
 
     try {
       const errObj = JSON.parse(error.message)
-      errorMessage = errObj.message
+      errorMessage = errObj.message ?? errorMessage
       partialMetadata = errObj.partialMetadata
+      errorType = errObj.type
     } catch (e) {}
 
     if (logId) {
       await updateAiLog(logId, {
-        response: `Error: ${errorMessage}`,
+        response: `Error: ${errorType ?? errorMessage}`,
         is_valid: false,
         tokens_used: partialMetadata?.tokensUsed || 0,
         cost_usd: Number((partialMetadata?.costUsd || 0).toFixed(6)),
@@ -313,7 +319,7 @@ export async function generateSingleSlideAction(
       }).catch(err => console.error('Failed to update error log for single slide:', err))
     }
 
-    return { success: false, error: errorMessage }
+    return { success: false, error: errorType ?? errorMessage }
   }
 }
 

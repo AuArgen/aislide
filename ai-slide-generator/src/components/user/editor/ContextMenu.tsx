@@ -1,5 +1,7 @@
+'use client'
 import React, { useEffect, useRef } from 'react'
 import { Copy, Trash, ArrowUpToLine, ArrowDownToLine, Scissors, ClipboardPaste, Undo, Redo, CopyPlus } from 'lucide-react'
+import { useT } from '@/components/shared/LanguageProvider'
 
 interface ContextMenuProps {
     x: number
@@ -22,6 +24,7 @@ export function ContextMenu({
     canUndo,
     canRedo,
 }: ContextMenuProps) {
+    const t = useT()
     const menuRef = useRef<HTMLDivElement>(null)
 
     useEffect(() => {
@@ -59,64 +62,64 @@ export function ContextMenu({
         >
             <ContextMenuItem
                 icon={<Undo size={14} />}
-                label="Артка кайтаруу (Undo)"
-                shortcut="Cmd+Z"
+                label={t('editor.ctxUndo')}
+                shortcut="Ctrl+Z"
                 onClick={() => onAction('undo')}
                 disabled={!canUndo}
             />
             <ContextMenuItem
                 icon={<Redo size={14} />}
-                label="Алдыга жылуу (Redo)"
-                shortcut="Cmd+Y"
+                label={t('editor.ctxRedo')}
+                shortcut="Ctrl+Y"
                 onClick={() => onAction('redo')}
                 disabled={!canRedo}
             />
             <div className="h-px bg-gray-200 my-1.5 mx-2" />
             <ContextMenuItem
                 icon={<Scissors size={14} />}
-                label="Кесүү"
-                shortcut="Cmd+X"
+                label={t('editor.ctxCut')}
+                shortcut="Ctrl+X"
                 onClick={() => onAction('cut')}
                 disabled={!hasSelection}
             />
             <ContextMenuItem
                 icon={<Copy size={14} />}
-                label="Көчүрүү"
-                shortcut="Cmd+C"
+                label={t('editor.ctxCopy')}
+                shortcut="Ctrl+C"
                 onClick={() => onAction('copy')}
                 disabled={!hasSelection}
             />
             <ContextMenuItem
                 icon={<ClipboardPaste size={14} />}
-                label="Жабыштыруу"
-                shortcut="Cmd+V"
+                label={t('editor.ctxPaste')}
+                shortcut="Ctrl+V"
                 onClick={() => onAction('paste')}
                 disabled={!hasClipboard}
             />
             <ContextMenuItem
                 icon={<CopyPlus size={14} />}
-                label="Дубликат"
-                shortcut="Cmd+D"
+                label={t('editor.ctxDuplicate')}
+                shortcut="Ctrl+D"
                 onClick={() => onAction('duplicate')}
                 disabled={!hasSelection}
             />
             <div className="h-px bg-gray-200 my-1.5 mx-2" />
             <ContextMenuItem
                 icon={<ArrowUpToLine size={14} />}
-                label="Алдыга алып чыгуу"
+                label={t('editor.ctxBringForward')}
                 onClick={() => onAction('bringForward')}
                 disabled={!hasSelection}
             />
             <ContextMenuItem
                 icon={<ArrowDownToLine size={14} />}
-                label="Артка жөнөтүү"
+                label={t('editor.ctxSendBackward')}
                 onClick={() => onAction('sendBackward')}
                 disabled={!hasSelection}
             />
             <div className="h-px bg-gray-200 my-1.5 mx-2" />
             <ContextMenuItem
                 icon={<Trash size={14} />}
-                label="Жок кылуу"
+                label={t('editor.ctxDelete')}
                 shortcut="Del"
                 onClick={() => onAction('delete')}
                 disabled={!hasSelection}

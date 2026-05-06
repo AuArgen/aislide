@@ -49,3 +49,4 @@ ai-slide-generator/.env.local
 *.sqlite
 *.db-shm
 *.db-wal
+ai-slide-generator/public/uploads/*
