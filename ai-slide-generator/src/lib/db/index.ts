@@ -97,6 +97,15 @@ function initSchema(d: DatabaseSync): void {
       updated_at  TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
     );
 
+    CREATE TABLE IF NOT EXISTS user_api_keys (
+      user_id     TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      provider    TEXT NOT NULL,
+      api_key     TEXT NOT NULL,
+      created_at  TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+      updated_at  TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+      PRIMARY KEY (user_id, provider)
+    );
+
     CREATE TABLE IF NOT EXISTS notifications (
       id          TEXT PRIMARY KEY,
       user_id     TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -110,6 +119,8 @@ function initSchema(d: DatabaseSync): void {
       id              TEXT PRIMARY KEY,
       user_id         TEXT NOT NULL,
       presentation_id TEXT,
+      provider        TEXT DEFAULT 'gemini',
+      model           TEXT DEFAULT 'gemini-2.5-flash',
       prompt          TEXT NOT NULL,
       client_prompt   TEXT,
       full_prompt     TEXT,
@@ -145,6 +156,33 @@ function initSchema(d: DatabaseSync): void {
     d.exec(`ALTER TABLE users ADD COLUMN preferred_language TEXT DEFAULT 'ky'`)
   } catch {
     // Column already exists — safe to ignore
+  }
+
+  try {
+    d.exec(`ALTER TABLE ai_logs ADD COLUMN provider TEXT DEFAULT 'gemini'`)
+  } catch {
+    // Column already exists - safe to ignore
+  }
+
+  try {
+    d.exec(`ALTER TABLE ai_logs ADD COLUMN model TEXT DEFAULT 'gemini-2.5-flash'`)
+  } catch {
+    // Column already exists - safe to ignore
+  }
+
+  try {
+    d.exec(`
+      CREATE TABLE IF NOT EXISTS user_api_keys (
+        user_id     TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        provider    TEXT NOT NULL,
+        api_key     TEXT NOT NULL,
+        created_at  TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+        updated_at  TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+        PRIMARY KEY (user_id, provider)
+      )
+    `)
+  } catch {
+    // Safe to ignore
   }
 
   // Add presentation_events table if not exists (SQLite migration)

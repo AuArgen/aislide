@@ -2,17 +2,26 @@
 
 import { GoogleGenerativeAI } from '@google/generative-ai'
 import { generateSlides, generateOutline, generateSingleSlide } from '@/lib/gemini'
+import type { AiProvider } from '@/lib/gemini'
 import { createPresentation } from '@/lib/actions/user'
 import { getSettingByKey } from '@/lib/actions/settings'
 import { revalidatePath } from 'next/cache'
 import { saveAiLog, updateAiLog } from '@/lib/actions/logs'
 import { logPresentationEvent } from '@/lib/actions/analytics'
 import { getCurrentSession } from '@/lib/auth/auth-helpers'
+import { getCurrentUserApiKey } from '@/lib/actions/userApiKeys'
+
+function resolveAiLogModel(provider: AiProvider, modelId?: string): string {
+  if (modelId) return modelId
+  return provider === 'openai' ? 'gpt-5.4-mini' : 'gemini-2.5-flash'
+}
 
 export async function generateAndSavePresentation(userId: string, prompt: string, slideCount: number = 5, tone: string = 'business') {
   // 1. Create initial log
   const logId = await saveAiLog({
     user_id: userId,
+    provider: 'gemini',
+    model: 'gemini-2.5-flash',
     prompt: `Generate presentation: ${prompt}`,
     client_prompt: prompt,
     is_valid: false
@@ -134,6 +143,8 @@ export async function generateAndSavePresentation(userId: string, prompt: string
 
     if (logId) {
       await updateAiLog(logId, {
+        provider: 'gemini',
+        model: 'gemini-2.5-flash',
         response: `Error: ${errorType ?? errorMessage}`,
         is_valid: false,
         tokens_used: partialMetadata?.tokensUsed || 0,
@@ -155,13 +166,18 @@ export async function generateOutlineAction(
   fileContext?: string,
   imageFiles?: Array<{ filename: string; url: string }>,
   modelId?: string,
+  provider: AiProvider = 'gemini',
 ) {
   const session = await getCurrentSession()
   let logId: string | null = null
+  const selectedModel = resolveAiLogModel(provider, modelId)
+  const apiKey = customApiKey || await getCurrentUserApiKey(provider)
 
   if (session) {
     logId = await saveAiLog({
       user_id: session.user.id,
+      provider,
+      model: selectedModel,
       prompt: `Generate outline: ${prompt}`,
       client_prompt: prompt,
       is_valid: false
@@ -170,11 +186,13 @@ export async function generateOutlineAction(
 
   try {
     const { content, metadata } = await generateOutline(
-      prompt, slideCount, tone, audience, customApiKey, fileContext, imageFiles, modelId
+      prompt, slideCount, tone, audience, apiKey ?? undefined, fileContext, imageFiles, modelId, provider
     )
 
     if (logId) {
       await updateAiLog(logId, {
+        provider,
+        model: selectedModel,
         full_prompt: metadata.fullPrompt,
         is_valid: metadata.isValid,
         response: metadata.rawResponse,
@@ -195,16 +213,20 @@ export async function generateOutlineAction(
     let errorMessage = error.message || 'Планды түзүүдө ката кетти'
     let partialMetadata = null
     let errorType: string | undefined
+    let apiKeyMask: string | undefined
 
     try {
       const errObj = JSON.parse(error.message)
       errorMessage = errObj.message ?? errorMessage
       partialMetadata = errObj.partialMetadata
       errorType = errObj.type
+      apiKeyMask = errObj.apiKeyMask
     } catch (e) {}
 
     if (logId) {
       await updateAiLog(logId, {
+        provider,
+        model: selectedModel,
         response: `Error: ${errorType ?? errorMessage}`,
         is_valid: false,
         tokens_used: partialMetadata?.tokensUsed || 0,
@@ -213,7 +235,7 @@ export async function generateOutlineAction(
       }).catch(err => console.error('Failed to update error log for outline:', err))
     }
 
-    return { success: false, error: errorType ?? errorMessage }
+    return { success: false, error: errorType ?? errorMessage, apiKeyMask }
   }
 }
 
@@ -224,13 +246,18 @@ export async function generateSingleSlideAction(
   presentationId?: string,
   slideIndex?: number,
   modelId?: string,
+  provider: AiProvider = 'gemini',
 ) {
   const session = await getCurrentSession()
   let logId: string | null = null
+  const selectedModel = resolveAiLogModel(provider, modelId)
+  const apiKey = customApiKey || await getCurrentUserApiKey(provider)
 
   if (session) {
     logId = await saveAiLog({
       user_id: session.user.id,
+      provider,
+      model: selectedModel,
       prompt: `Generate single slide: ${outlineItem.title}`,
       client_prompt: outlineItem.title + ': ' + outlineItem.coreMessage,
       is_valid: false
@@ -238,7 +265,7 @@ export async function generateSingleSlideAction(
   }
 
   try {
-    const { content: slide, metadata } = await generateSingleSlide(outlineItem, colorTheme, customApiKey, modelId)
+    const { content: slide, metadata } = await generateSingleSlide(outlineItem, colorTheme, apiKey ?? undefined, modelId, provider)
 
     // 2. Resolve stock images if any
     if (slide) {
@@ -271,6 +298,8 @@ export async function generateSingleSlideAction(
     if (logId) {
       await updateAiLog(logId, {
         presentation_id: presentationId ?? null,
+        provider,
+        model: selectedModel,
         full_prompt: metadata.fullPrompt,
         is_valid: metadata.isValid,
         response: metadata.rawResponse,
@@ -303,16 +332,20 @@ export async function generateSingleSlideAction(
     let errorMessage = error.message || 'Слайдды түзүүдө ката кетти'
     let partialMetadata = null
     let errorType: string | undefined
+    let apiKeyMask: string | undefined
 
     try {
       const errObj = JSON.parse(error.message)
       errorMessage = errObj.message ?? errorMessage
       partialMetadata = errObj.partialMetadata
       errorType = errObj.type
+      apiKeyMask = errObj.apiKeyMask
     } catch (e) {}
 
     if (logId) {
       await updateAiLog(logId, {
+        provider,
+        model: selectedModel,
         response: `Error: ${errorType ?? errorMessage}`,
         is_valid: false,
         tokens_used: partialMetadata?.tokensUsed || 0,
@@ -321,7 +354,7 @@ export async function generateSingleSlideAction(
       }).catch(err => console.error('Failed to update error log for single slide:', err))
     }
 
-    return { success: false, error: errorType ?? errorMessage }
+    return { success: false, error: errorType ?? errorMessage, apiKeyMask }
   }
 }
 
@@ -353,6 +386,8 @@ export async function textAiAction(
     if (session) {
       logId = await saveAiLog({
         user_id: session.user.id,
+        provider: 'gemini',
+        model: 'gemini-2.5-flash',
         prompt: `Text AI (${mode}): ${text.substring(0, 100)}...`,
         client_prompt: text,
         is_valid: true
@@ -376,6 +411,8 @@ export async function textAiAction(
     if (logId) {
       await updateAiLog(logId, {
         presentation_id: presentationId ?? null,
+        provider: 'gemini',
+        model: 'gemini-2.5-flash',
         full_prompt: prompt,
         response: output,
         tokens_used: totalTokens,

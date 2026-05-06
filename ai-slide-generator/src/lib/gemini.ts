@@ -2,6 +2,15 @@ import { GoogleGenerativeAI } from '@google/generative-ai'
 import { getSettingByKey } from '@/lib/actions/settings'
 import { GEMINI_LAYOUTS } from './geminiLayouts'
 
+export type AiProvider = 'gemini' | 'openai'
+
+const DEFAULT_MODELS: Record<AiProvider, string> = {
+  gemini: 'gemini-2.5-flash',
+  openai: 'gpt-5.4-mini',
+}
+
+const OPENAI_RESPONSES_URL = 'https://api.openai.com/v1/responses'
+
 export interface AiResponse<T> {
   content: T
   metadata: {
@@ -17,7 +26,12 @@ export interface AiResponse<T> {
   }
 }
 
-async function withRetry<T>(fn: () => Promise<T>, maxRetries: number = 3, initialDelay: number = 1000): Promise<T> {
+async function withRetry<T>(
+  fn: () => Promise<T>,
+  maxRetries: number = 3,
+  initialDelay: number = 1000,
+  apiName: string = 'AI API',
+): Promise<T> {
   let lastError: any
   for (let i = 0; i <= maxRetries; i++) {
     try {
@@ -25,11 +39,18 @@ async function withRetry<T>(fn: () => Promise<T>, maxRetries: number = 3, initia
     } catch (error: any) {
       lastError = error
       // 429 Too Many Requests же 500+ каталарын гана кайталап көрөбүз
-      const isRetryable = error.status === 429 || (error.status >= 500 && error.status <= 599) || error.message?.includes('429')
+      const message = String(error.message || '').toLowerCase()
+      const isInsufficientQuota = error.code === 'insufficient_quota' || message.includes('insufficient_quota') || message.includes('current quota')
+      const isRetryable = !isInsufficientQuota && (
+        error.status === 429 ||
+        (error.status >= 500 && error.status <= 599) ||
+        message.includes('429') ||
+        message.includes('rate limit')
+      )
 
       if (i < maxRetries && isRetryable) {
         const delay = initialDelay * Math.pow(2, i)
-        console.warn(`Gemini API error (status: ${error.status}). Retrying in ${delay}ms... (Attempt ${i + 1}/${maxRetries})`)
+        console.warn(`${apiName} error (status: ${error.status}). Retrying in ${delay}ms... (Attempt ${i + 1}/${maxRetries})`)
         await new Promise(resolve => setTimeout(resolve, delay))
         continue
       }
@@ -37,6 +58,178 @@ async function withRetry<T>(fn: () => Promise<T>, maxRetries: number = 3, initia
     }
   }
   throw lastError
+}
+
+async function getProviderApiKey(provider: AiProvider, customApiKey?: string): Promise<string> {
+  if (customApiKey?.trim()) return customApiKey.trim()
+
+  if (provider === 'gemini') {
+    let apiKey = await getSettingByKey('GEMINI_API_KEY')
+    if (!apiKey) apiKey = process.env.GEMINI_API_KEY ?? null
+    if (!apiKey) throw new Error('Gemini API key is not configured in settings or environment variables')
+    return apiKey
+  }
+
+  let apiKey = await getSettingByKey('OPENAI_API_KEY')
+  if (!apiKey) apiKey = process.env.OPENAI_API_KEY ?? null
+  if (!apiKey) throw new Error('OpenAI API key is not configured in settings or environment variables')
+  return apiKey
+}
+
+async function resolveProviderApiKey(provider: AiProvider, customApiKey?: string) {
+  const apiKey = await getProviderApiKey(provider, customApiKey)
+  return {
+    apiKey,
+    apiKeyMask: maskApiKey(apiKey),
+  }
+}
+
+function estimateCostUsd(provider: AiProvider, inputTokens: number, outputTokens: number): number {
+  if (provider === 'gemini') {
+    return (inputTokens / 1000000) * 0.075 + (outputTokens / 1000000) * 0.30
+  }
+
+  return 0
+}
+
+function extractOpenAiOutputText(response: any): string {
+  if (typeof response.output_text === 'string') return response.output_text.trim()
+
+  const chunks: string[] = []
+  for (const item of response.output ?? []) {
+    for (const content of item.content ?? []) {
+      if (typeof content.text === 'string') chunks.push(content.text)
+      if (typeof content.output_text === 'string') chunks.push(content.output_text)
+    }
+  }
+
+  return chunks.join('\n').trim()
+}
+
+function maskApiKey(apiKey: string): string {
+  if (!apiKey) return ''
+  const trimmed = apiKey.trim()
+  if (trimmed.length <= 24) return `${trimmed.slice(0, 4)}...${trimmed.slice(-4)}`
+  return `${trimmed.slice(0, 15)}...${trimmed.slice(-6)}`
+}
+
+async function generateProviderText(
+  provider: AiProvider,
+  prompt: string,
+  customApiKey?: string,
+  modelId?: string,
+): Promise<{ text: string; inputTokens: number; outputTokens: number; totalTokens: number; rawResponse: string; apiKeyMask: string }> {
+  const { apiKey, apiKeyMask } = await resolveProviderApiKey(provider, customApiKey)
+  const selectedModel = modelId || DEFAULT_MODELS[provider]
+
+  if (provider === 'gemini') {
+    const genAI = new GoogleGenerativeAI(apiKey)
+    const model = genAI.getGenerativeModel({ model: selectedModel })
+    const result = await withRetry(() => model.generateContent(prompt), 3, 1000, 'Gemini API')
+    const response = await result.response
+    const inputTokens = response.usageMetadata?.promptTokenCount || 0
+    const outputTokens = response.usageMetadata?.candidatesTokenCount || 0
+    const totalTokens = response.usageMetadata?.totalTokenCount || 0
+    const text = response.text()
+
+    return {
+      text,
+      inputTokens,
+      outputTokens,
+      totalTokens,
+      rawResponse: text,
+      apiKeyMask,
+    }
+  }
+
+  const data = await withRetry(async () => {
+    const res = await fetch(OPENAI_RESPONSES_URL, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${apiKey}`,
+      },
+      body: JSON.stringify({
+        model: selectedModel,
+        input: prompt,
+        store: false,
+      }),
+    })
+
+    const raw = await res.text()
+    let parsed: any = null
+    try {
+      parsed = raw ? JSON.parse(raw) : null
+    } catch {}
+
+    if (!res.ok) {
+      const message = parsed?.error?.message || raw || res.statusText
+      const error = new Error(message) as Error & { status?: number; code?: string }
+      error.status = res.status
+      error.code = parsed?.error?.code
+      throw error
+    }
+
+    return parsed
+  }, 3, 1000, 'OpenAI API')
+
+  const inputTokens = data?.usage?.input_tokens || 0
+  const outputTokens = data?.usage?.output_tokens || 0
+  const totalTokens = data?.usage?.total_tokens || inputTokens + outputTokens
+
+  return {
+    text: extractOpenAiOutputText(data),
+    inputTokens,
+    outputTokens,
+    totalTokens,
+    rawResponse: JSON.stringify(data),
+    apiKeyMask,
+  }
+}
+
+function throwProviderError(
+  provider: AiProvider,
+  error: any,
+  inputTokens: number,
+  outputTokens: number,
+  totalTokens: number,
+  durationMs: number,
+  fallbackMessage: string,
+  apiKeyMask?: string,
+): never {
+  const costUsd = estimateCostUsd(provider, inputTokens, outputTokens)
+  const message = String(error?.message || '')
+  const lowerMessage = message.toLowerCase()
+  const status = error?.status
+
+  if (status === 429 || lowerMessage.includes('429') || lowerMessage.includes('rate limit')) {
+    throw new Error(JSON.stringify({
+      type: 'RATE_LIMIT',
+      apiKeyMask,
+      partialMetadata: { tokensUsed: totalTokens, costUsd, durationMs: Math.round(durationMs) }
+    }))
+  }
+
+  if (
+    status === 401 ||
+    status === 403 ||
+    lowerMessage.includes('api_key') ||
+    lowerMessage.includes('api key') ||
+    lowerMessage.includes('incorrect api key') ||
+    lowerMessage.includes('api key not valid')
+  ) {
+    throw new Error(JSON.stringify({
+      type: 'INVALID_API_KEY',
+      apiKeyMask,
+      partialMetadata: { tokensUsed: totalTokens, costUsd, durationMs: Math.round(durationMs) }
+    }))
+  }
+
+  throw new Error(JSON.stringify({
+    message: `${fallbackMessage}: ${message || 'Белгисиз ката'}`,
+    apiKeyMask,
+    partialMetadata: { tokensUsed: totalTokens, costUsd, durationMs: Math.round(durationMs) }
+  }))
 }
 
 export async function generateSlides(prompt: string, slideCount: number = 5, tone: string = 'business', customApiKey?: string): Promise<AiResponse<any>> {
@@ -169,7 +362,7 @@ JSON Structure:
   let outputTokens = 0
   
   try {
-    const result = await withRetry(() => model.generateContent([systemPrompt, prompt]))
+    const result = await withRetry(() => model.generateContent([systemPrompt, prompt]), 3, 1000, 'Gemini API')
     const response = await result.response
     
     inputTokens = response.usageMetadata?.promptTokenCount || 0
@@ -248,14 +441,9 @@ export async function generateOutline(
   fileContext?: string,
   imageFiles?: Array<{ filename: string; url: string }>,
   modelId?: string,
+  provider: AiProvider = 'gemini',
 ): Promise<AiResponse<any>> {
   const startTime = performance.now()
-  let apiKey = customApiKey || await getSettingByKey('GEMINI_API_KEY')
-  if (!apiKey) apiKey = process.env.GEMINI_API_KEY ?? null
-  if (!apiKey) throw new Error('Gemini API key is not configured in settings or environment variables')
-
-  const genAI = new GoogleGenerativeAI(apiKey)
-  const model = genAI.getGenerativeModel({ model: modelId || 'gemini-2.5-flash' })
 
   const toneInstructions: Record<string, string> = {
     'business': 'Professional, clear, and business-oriented.',
@@ -326,18 +514,18 @@ Return ONLY the following JSON object (no markdown, no extra text):
   let inputTokens = 0
   let outputTokens = 0
   let totalTokens = 0
+  const apiKeyMask = customApiKey ? maskApiKey(customApiKey) : undefined
   
   try {
-    const result = await withRetry(() => model.generateContent(systemPrompt))
-    const response = await result.response
-    const text = response.text()
+    const completion = await generateProviderText(provider, systemPrompt, customApiKey, modelId)
+    const text = completion.text
     
     const durationMs = performance.now() - startTime
     
-    inputTokens = response.usageMetadata?.promptTokenCount || 0
-    outputTokens = response.usageMetadata?.candidatesTokenCount || 0
-    totalTokens = response.usageMetadata?.totalTokenCount || 0
-    const costUsd = (inputTokens / 1000000) * 0.075 + (outputTokens / 1000000) * 0.30
+    inputTokens = completion.inputTokens
+    outputTokens = completion.outputTokens
+    totalTokens = completion.totalTokens
+    const costUsd = estimateCostUsd(provider, inputTokens, outputTokens)
 
     // JSON тазалоо
     const cleanJson = text.replace(/```json|```/gi, '').trim()
@@ -364,7 +552,7 @@ Return ONLY the following JSON object (no markdown, no extra text):
     return {
       content: { slides, imageDecisions },
       metadata: {
-        rawResponse: text,
+        rawResponse: completion.rawResponse,
         fullPrompt: systemPrompt,
         clientPrompt: prompt,
         isValid,
@@ -376,28 +564,9 @@ Return ONLY the following JSON object (no markdown, no extra text):
       }
     }
   } catch (error: any) {
-    console.error('Gemini API Error (Outline):', error)
-    const costUsd = (inputTokens / 1000000) * 0.075 + (outputTokens / 1000000) * 0.30
+    console.error(`${provider} API Error (Outline):`, error)
     const durationMs = performance.now() - startTime
-
-    if (error.status === 429 || error.message?.includes('429')) {
-      throw new Error(JSON.stringify({
-        type: 'RATE_LIMIT',
-        partialMetadata: { tokensUsed: totalTokens, costUsd, durationMs: Math.round(durationMs) }
-      }))
-    }
-
-    if (error.status === 403 || error.status === 400 || error.message?.includes('API_KEY') || error.message?.includes('invalid') || error.message?.includes('not found')) {
-      throw new Error(JSON.stringify({
-        type: 'INVALID_API_KEY',
-        partialMetadata: { tokensUsed: totalTokens, costUsd, durationMs: Math.round(durationMs) }
-      }))
-    }
-
-    throw new Error(JSON.stringify({
-      message: 'Презентациянын планын түзүүдө ката кетти: ' + (error.message || 'Белгисиз ката'),
-      partialMetadata: { tokensUsed: totalTokens, costUsd, durationMs: Math.round(durationMs) }
-    }))
+    throwProviderError(provider, error, inputTokens, outputTokens, totalTokens, durationMs, 'Презентациянын планын түзүүдө ката кетти', apiKeyMask)
   }
 }
 
@@ -434,14 +603,14 @@ const COLOR_PALETTES: Record<string, { bg: string; titleColor: string; detailCol
   },
 }
 
-export async function generateSingleSlide(outlineItem: any, colorTheme: string, customApiKey?: string, modelId?: string): Promise<AiResponse<any>> {
+export async function generateSingleSlide(
+  outlineItem: any,
+  colorTheme: string,
+  customApiKey?: string,
+  modelId?: string,
+  provider: AiProvider = 'gemini',
+): Promise<AiResponse<any>> {
   const startTime = performance.now()
-  let apiKey = customApiKey || await getSettingByKey('GEMINI_API_KEY')
-  if (!apiKey) apiKey = process.env.GEMINI_API_KEY ?? null
-  if (!apiKey) throw new Error('Gemini API key is not configured in settings or environment variables')
-
-  const genAI = new GoogleGenerativeAI(apiKey)
-  const model = genAI.getGenerativeModel({ model: modelId || 'gemini-2.5-flash' })
 
   const palette = COLOR_PALETTES[colorTheme] ?? COLOR_PALETTES['Modern Dark']
 
@@ -515,19 +684,19 @@ Return ONLY raw JSON. Do NOT include markdown formatting like \`\`\`json.
   let totalTokens = 0
   let inputTokens = 0
   let outputTokens = 0
+  const apiKeyMask = customApiKey ? maskApiKey(customApiKey) : undefined
 
   try {
-    const result = await withRetry(() => model.generateContent(systemPrompt))
-    const response = await result.response
+    const completion = await generateProviderText(provider, systemPrompt, customApiKey, modelId)
     
-    inputTokens = response.usageMetadata?.promptTokenCount || 0
-    outputTokens = response.usageMetadata?.candidatesTokenCount || 0
-    totalTokens = response.usageMetadata?.totalTokenCount || 0
+    inputTokens = completion.inputTokens
+    outputTokens = completion.outputTokens
+    totalTokens = completion.totalTokens
     
-    const text = response.text()
+    const text = completion.text
     
     const durationMs = performance.now() - startTime
-    const costUsd = (inputTokens / 1000000) * 0.075 + (outputTokens / 1000000) * 0.30
+    const costUsd = estimateCostUsd(provider, inputTokens, outputTokens)
 
     // JSON тазалоо
     const cleanJson = text.replace(/```json|```/gi, '').trim()
@@ -546,7 +715,7 @@ Return ONLY raw JSON. Do NOT include markdown formatting like \`\`\`json.
     return {
       content,
       metadata: {
-        rawResponse: text,
+        rawResponse: completion.rawResponse,
         fullPrompt: systemPrompt,
         clientPrompt: outlineItem.title,
         isValid,
@@ -558,26 +727,9 @@ Return ONLY raw JSON. Do NOT include markdown formatting like \`\`\`json.
       }
     }
   } catch (error: any) {
-    console.error('Gemini API Error (Single Slide):', error)
+    console.error(`${provider} API Error (Single Slide):`, error)
     
-    const costUsd = (inputTokens / 1000000) * 0.075 + (outputTokens / 1000000) * 0.30
     const durationMs = performance.now() - startTime
-
-    if (error.status === 429 || error.message?.includes('429')) {
-      throw new Error(JSON.stringify({
-        type: 'RATE_LIMIT',
-        partialMetadata: { tokensUsed: totalTokens, costUsd, durationMs: Math.round(durationMs) }
-      }))
-    }
-    if (error.status === 403 || error.status === 400 || error.message?.includes('API_KEY') || error.message?.includes('invalid') || error.message?.includes('not found')) {
-      throw new Error(JSON.stringify({
-        type: 'INVALID_API_KEY',
-        partialMetadata: { tokensUsed: totalTokens, costUsd, durationMs: Math.round(durationMs) }
-      }))
-    }
-    throw new Error(JSON.stringify({
-      message: 'Слайдды түзүүдө ката кетти: ' + (error.message || 'Белгисиз ката'),
-      partialMetadata: { tokensUsed: totalTokens, costUsd, durationMs: Math.round(durationMs) }
-    }))
+    throwProviderError(provider, error, inputTokens, outputTokens, totalTokens, durationMs, 'Слайдды түзүүдө ката кетти', apiKeyMask)
   }
 }

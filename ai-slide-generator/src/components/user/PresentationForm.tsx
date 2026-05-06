@@ -4,10 +4,32 @@ import { useState, useEffect, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import { generateOutlineAction, generateSingleSlideAction } from '@/lib/actions/gemini'
 import { createPresentation } from '@/lib/actions/user'
+import { getUserApiKeyStatus, saveUserApiKey } from '@/lib/actions/userApiKeys'
 import { useT, useLanguage } from '@/components/shared/LanguageProvider'
 import Link from 'next/link'
 
-const STORAGE_KEY = 'user_gemini_api_key'
+type AiProvider = 'gemini' | 'openai'
+
+const AI_PROVIDER_STORAGE_KEY = 'aislide_ai_provider'
+const MODEL_STORAGE_KEYS: Record<AiProvider, string> = {
+  gemini: 'aislide_gemini_model',
+  openai: 'aislide_openai_model',
+}
+
+const AI_PROVIDERS = [
+  {
+    id: 'gemini',
+    label: 'Gemini',
+    apiKeyUrl: 'https://aistudio.google.com/api-keys',
+    descKey: 'form.providerGeminiDesc',
+  },
+  {
+    id: 'openai',
+    label: 'ChatGPT',
+    apiKeyUrl: 'https://platform.openai.com/api-keys',
+    descKey: 'form.providerOpenAiDesc',
+  },
+] as const
 
 const TEMPLATES = [
   { id: "html_dark_professional", name: "Dark Professional", thumbnail: "https://kimi-img.moonshot.cn/pub/slides/slides-styles/html_dark_professional_en_01.jpg?x-oss-process=image/resize,w_300", payload: { tone: "business", audience: "Professionals", colorTheme: "Modern Dark" } },
@@ -63,7 +85,45 @@ const GEMINI_MODELS = [
   },
 ] as const
 
-type GeminiModelId = typeof GEMINI_MODELS[number]['id']
+const OPENAI_MODELS = [
+  {
+    provider: 'openai',
+    id: 'gpt-5.4-mini',
+    label: 'GPT 5.4 Mini',
+    tagKey: 'form.modelFast' as const,
+    tagColor: 'bg-emerald-100 text-emerald-700',
+    desc: { ky: 'Тез жана үнөмдүү. Көпчүлүк презентациялар үчүн жакшы.', ru: 'Быстрая и экономичная. Хорошо подходит для большинства презентаций.', en: 'Fast and cost-efficient. Good for most presentations.' },
+    icon: 'GPT',
+    badge: 'NEW',
+  },
+  {
+    provider: 'openai',
+    id: 'gpt-5.4',
+    label: 'GPT 5.4',
+    tagKey: 'form.modelBalanced' as const,
+    tagColor: 'bg-blue-100 text-blue-700',
+    desc: { ky: 'Сапат менен ылдамдыктын тең салмагы.', ru: 'Баланс качества, скорости и стоимости.', en: 'Balanced quality, speed, and cost.' },
+    icon: 'GPT',
+    badge: null,
+  },
+  {
+    provider: 'openai',
+    id: 'gpt-5.4-pro',
+    label: 'GPT 5.4 Pro',
+    tagKey: 'form.modelPowerful' as const,
+    tagColor: 'bg-violet-100 text-violet-700',
+    desc: { ky: 'Татаал темалар жана жогорку сапат үчүн.', ru: 'Для сложных тем и максимального качества.', en: 'For complex topics and maximum quality.' },
+    icon: 'GPT',
+    badge: null,
+  },
+] as const
+
+const AI_MODELS = [
+  ...GEMINI_MODELS.map(model => ({ ...model, provider: 'gemini' as const })),
+  ...OPENAI_MODELS,
+] as const
+
+type AiModelId = typeof AI_MODELS[number]['id']
 
 type WizardStep = 'input' | 'outline' | 'generating'
 
@@ -100,11 +160,14 @@ export function PresentationForm({ userId, canGenerate }: PresentationFormProps)
   const [step, setStep] = useState<WizardStep>('input')
   const [prompt, setPrompt] = useState('')
   const [slideCount, setSlideCount] = useState(5)
-  const [customApiKey, setCustomApiKey] = useState('')
+  const [apiKeys, setApiKeys] = useState<Record<AiProvider, string>>({ gemini: '', openai: '' })
+  const [savedApiKeys, setSavedApiKeys] = useState<Record<AiProvider, boolean>>({ gemini: false, openai: false })
   const [showApiKey, setShowApiKey] = useState(false)
+  const [apiKeySaveStatus, setApiKeySaveStatus] = useState<'saved' | 'error' | null>(null)
   const [isAdvancedOpen, setIsAdvancedOpen] = useState(false)
   const [attachedFiles, setAttachedFiles] = useState<AttachedFile[]>([])
-  const [selectedModel, setSelectedModel] = useState<GeminiModelId>('gemini-2.5-flash')
+  const [selectedProvider, setSelectedProvider] = useState<AiProvider>('gemini')
+  const [selectedModel, setSelectedModel] = useState<AiModelId>('gemini-2.5-flash')
   const [isLoadingOutline, setIsLoadingOutline] = useState(false)
 
   const [outline, setOutline] = useState<OutlineItem[]>([])
@@ -117,19 +180,67 @@ export function PresentationForm({ userId, canGenerate }: PresentationFormProps)
   const [progress, setProgress] = useState(0)
   const [totalSteps, setTotalSteps] = useState(1)
   const [error, setError] = useState<string | null>(null)
+  const [errorApiKeyMask, setErrorApiKeyMask] = useState<string | null>(null)
   const [errorType, setErrorType] = useState<'RATE_LIMIT' | 'INVALID_API_KEY' | null>(null)
 
   useEffect(() => {
-    const stored = localStorage.getItem(STORAGE_KEY)
-    if (stored) setCustomApiKey(stored)
+    const storedProvider = localStorage.getItem(AI_PROVIDER_STORAGE_KEY)
+    const initialProvider: AiProvider = storedProvider === 'openai' ? 'openai' : 'gemini'
+    const storedModel = localStorage.getItem(MODEL_STORAGE_KEYS[initialProvider])
+    const initialModel = AI_MODELS.find(m => m.provider === initialProvider && m.id === storedModel)?.id
+      ?? AI_MODELS.find(m => m.provider === initialProvider)?.id
+      ?? 'gemini-2.5-flash'
+
+    setSelectedProvider(initialProvider)
+    setSelectedModel(initialModel)
+    if (!storedProvider) setIsAdvancedOpen(true)
     textareaRef.current?.focus()
+
+    getUserApiKeyStatus().then(result => {
+      if (result.success) setSavedApiKeys(result.keys)
+    }).catch(() => {})
   }, [])
 
   const handleApiKeyChange = (value: string) => {
-    setCustomApiKey(value)
-    localStorage.setItem(STORAGE_KEY, value)
+    setApiKeys(prev => ({ ...prev, [selectedProvider]: value }))
+    setApiKeySaveStatus(null)
+    if (errorType) { setErrorType(null); setError(null); setErrorApiKeyMask(null) }
+  }
+
+  const handleSaveApiKey = async () => {
+    const result = await saveUserApiKey(selectedProvider, customApiKey)
+    if (result.success) {
+      setSavedApiKeys(prev => ({ ...prev, [selectedProvider]: true }))
+      setApiKeys(prev => ({ ...prev, [selectedProvider]: '' }))
+      setApiKeySaveStatus('saved')
+    } else {
+      setApiKeySaveStatus('error')
+    }
+  }
+
+  const handleProviderChange = (provider: AiProvider) => {
+    setSelectedProvider(provider)
+    localStorage.setItem(AI_PROVIDER_STORAGE_KEY, provider)
+    setApiKeySaveStatus(null)
+
+    const storedModel = localStorage.getItem(MODEL_STORAGE_KEYS[provider])
+    const nextModel = AI_MODELS.find(m => m.provider === provider && m.id === storedModel)?.id
+      ?? AI_MODELS.find(m => m.provider === provider)?.id
+      ?? selectedModel
+    setSelectedModel(nextModel)
     if (errorType) { setErrorType(null); setError(null) }
   }
+
+  const handleModelChange = (modelId: AiModelId) => {
+    setSelectedModel(modelId)
+    localStorage.setItem(MODEL_STORAGE_KEYS[selectedProvider], modelId)
+    if (errorType) { setErrorType(null); setError(null) }
+  }
+
+  const currentProvider = AI_PROVIDERS.find(p => p.id === selectedProvider) ?? AI_PROVIDERS[0]
+  const customApiKey = apiKeys[selectedProvider] ?? ''
+  const hasUserApiKeyForGeneration = !!customApiKey.trim() || savedApiKeys[selectedProvider]
+  const providerModels = AI_MODELS.filter(m => m.provider === selectedProvider)
 
   const handleFileSelect = async (files: FileList | null) => {
     if (!files?.length) return
@@ -212,9 +323,11 @@ export function PresentationForm({ userId, canGenerate }: PresentationFormProps)
         buildTextContext(),
         imageFiles.length ? imageFiles : undefined,
         selectedModel,
+        selectedProvider,
       )
       if (!result.success || !result.data) {
         const errCode = result.error as string
+        setErrorApiKeyMask((result as any).apiKeyMask ?? null)
         if (errCode === 'RATE_LIMIT' || errCode === 'INVALID_API_KEY') {
           setErrorType(errCode)
           setIsAdvancedOpen(true)
@@ -252,9 +365,11 @@ export function PresentationForm({ userId, canGenerate }: PresentationFormProps)
           undefined,
           undefined,
           selectedModel,
+          selectedProvider,
         )
         if (!res.success || !res.data) {
           const errCode = res.error as string
+          setErrorApiKeyMask((res as any).apiKeyMask ?? null)
           if (errCode === 'RATE_LIMIT' || errCode === 'INVALID_API_KEY') {
             setErrorType(errCode)
             setIsAdvancedOpen(true)
@@ -298,7 +413,7 @@ export function PresentationForm({ userId, canGenerate }: PresentationFormProps)
 
       const result = await createPresentation(
         userId, outline[0]?.title || prompt,
-        slides, 'default', !!customApiKey.trim()
+        slides, 'default', hasUserApiKeyForGeneration
       )
 
       if (result.success && (result as any).data?.id) {
@@ -357,13 +472,18 @@ export function PresentationForm({ userId, canGenerate }: PresentationFormProps)
         {error && errorType === 'RATE_LIMIT' && (
           <div className="mt-6 p-4 bg-amber-50 border border-amber-200 rounded-xl text-sm max-w-sm text-left space-y-2">
             <p className="text-amber-800 font-medium">{t('form.rateLimitError')}</p>
-            <p className="text-amber-700">{t('form.rateLimitHint')}</p>
-            <a href="https://aistudio.google.com/api-keys" target="_blank" rel="noopener noreferrer"
+            <p className="text-amber-700">{t('form.rateLimitHint', { provider: currentProvider.label })}</p>
+            {errorApiKeyMask && (
+              <p className="text-amber-800 font-mono text-xs bg-amber-100 border border-amber-200 rounded-lg px-2 py-1">
+                {t('form.usedApiKey', { key: errorApiKeyMask })}
+              </p>
+            )}
+            <a href={currentProvider.apiKeyUrl} target="_blank" rel="noopener noreferrer"
               className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-amber-500 hover:bg-amber-600 text-white text-xs font-semibold rounded-lg transition-colors">
               <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
               </svg>
-              {t('form.getApiKey')}
+              {t('form.getApiKey', { provider: currentProvider.label })}
             </a>
           </div>
         )}
@@ -506,13 +626,18 @@ export function PresentationForm({ userId, canGenerate }: PresentationFormProps)
         {error && errorType === 'RATE_LIMIT' && (
           <div className="p-4 bg-amber-50 border border-amber-200 rounded-xl text-sm mb-4 space-y-2">
             <p className="text-amber-800 font-medium">{t('form.rateLimitError')}</p>
-            <p className="text-amber-700">{t('form.rateLimitHint')}</p>
-            <a href="https://aistudio.google.com/api-keys" target="_blank" rel="noopener noreferrer"
+            <p className="text-amber-700">{t('form.rateLimitHint', { provider: currentProvider.label })}</p>
+            {errorApiKeyMask && (
+              <p className="text-amber-800 font-mono text-xs bg-amber-100 border border-amber-200 rounded-lg px-2 py-1">
+                {t('form.usedApiKey', { key: errorApiKeyMask })}
+              </p>
+            )}
+            <a href={currentProvider.apiKeyUrl} target="_blank" rel="noopener noreferrer"
               className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-amber-500 hover:bg-amber-600 text-white text-xs font-semibold rounded-lg transition-colors">
               <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
               </svg>
-              {t('form.getApiKey')}
+              {t('form.getApiKey', { provider: currentProvider.label })}
             </a>
           </div>
         )}
@@ -707,19 +832,51 @@ export function PresentationForm({ userId, canGenerate }: PresentationFormProps)
           {isAdvancedOpen && (
             <div className="mt-4 flex flex-col gap-4 bg-gray-50 p-5 rounded-2xl border border-gray-100">
 
+              {/* Provider selector */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  {t('form.aiProvider')}
+                </label>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                  {AI_PROVIDERS.map(provider => {
+                    const isSelected = selectedProvider === provider.id
+                    return (
+                      <button
+                        key={provider.id}
+                        type="button"
+                        onClick={() => handleProviderChange(provider.id)}
+                        disabled={isLoadingOutline}
+                        className={`text-left px-4 py-3 rounded-xl border-2 transition-all duration-150 ${
+                          isSelected
+                            ? 'border-blue-500 bg-blue-50'
+                            : 'border-gray-200 bg-white hover:border-blue-300 hover:bg-blue-50/40'
+                        } disabled:opacity-50`}
+                      >
+                        <span className="block text-sm font-semibold text-gray-900">
+                          {provider.label}
+                        </span>
+                        <span className="block text-xs text-gray-500 mt-1">
+                          {t(provider.descKey)}
+                        </span>
+                      </button>
+                    )
+                  })}
+                </div>
+              </div>
+
               {/* Model selector */}
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
                   {t('form.aiModel')}
                 </label>
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-                  {GEMINI_MODELS.map(m => {
+                  {providerModels.map(m => {
                     const isSelected = selectedModel === m.id
                     return (
                       <button
                         key={m.id}
                         type="button"
-                        onClick={() => setSelectedModel(m.id)}
+                        onClick={() => handleModelChange(m.id)}
                         disabled={isLoadingOutline}
                         className={`relative flex flex-col gap-1.5 text-left px-3 py-3 rounded-xl border-2 transition-all duration-150 ${
                           isSelected
@@ -775,7 +932,7 @@ export function PresentationForm({ userId, canGenerate }: PresentationFormProps)
 
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1.5">
-                  {t('form.apiKey')}
+                  {t('form.apiKey', { provider: currentProvider.label })}
                 </label>
                 <div className="relative">
                   <input
@@ -783,7 +940,7 @@ export function PresentationForm({ userId, canGenerate }: PresentationFormProps)
                     value={customApiKey}
                     onChange={e => handleApiKeyChange(e.target.value)}
                     className="w-full px-4 py-2 pr-10 bg-white border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none font-mono text-sm"
-                    placeholder="AIza..."
+                    placeholder={selectedProvider === 'openai' ? 'sk-...' : 'AIza...'}
                     disabled={isLoadingOutline}
                   />
                   <button
@@ -803,8 +960,36 @@ export function PresentationForm({ userId, canGenerate }: PresentationFormProps)
                     )}
                   </button>
                 </div>
+                <div className="mt-2 flex flex-wrap items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={handleSaveApiKey}
+                    disabled={isLoadingOutline || !customApiKey.trim()}
+                    className="px-3 py-1.5 bg-gray-900 text-white text-xs font-semibold rounded-lg hover:bg-gray-800 transition-colors disabled:opacity-50"
+                  >
+                    {t('form.saveApiKey')}
+                  </button>
+                  {apiKeySaveStatus === 'saved' && (
+                    <span className="text-xs font-medium text-emerald-600">
+                      {t('form.apiKeySaved')}
+                    </span>
+                  )}
+                  {apiKeySaveStatus === 'error' && (
+                    <span className="text-xs font-medium text-red-600">
+                      {t('form.apiKeySaveError')}
+                    </span>
+                  )}
+                  {savedApiKeys[selectedProvider] && !customApiKey.trim() && apiKeySaveStatus !== 'saved' && (
+                    <span className="text-xs font-medium text-emerald-600">
+                      {t('form.apiKeyAlreadySaved')}
+                    </span>
+                  )}
+                </div>
+                <p className="mt-1.5 text-xs text-gray-500">
+                  {t('form.apiKeyLocalHint')}
+                </p>
                 <a
-                  href="https://aistudio.google.com/api-keys"
+                  href={currentProvider.apiKeyUrl}
                   target="_blank"
                   rel="noopener noreferrer"
                   className="mt-1.5 flex items-center gap-1 text-xs text-blue-500 hover:text-blue-700 transition-colors"
@@ -812,7 +997,7 @@ export function PresentationForm({ userId, canGenerate }: PresentationFormProps)
                   <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
                   </svg>
-                  {t('form.getApiKey')}
+                  {t('form.getApiKey', { provider: currentProvider.label })}
                 </a>
               </div>
               </div>
@@ -829,10 +1014,15 @@ export function PresentationForm({ userId, canGenerate }: PresentationFormProps)
               </svg>
               {t('form.rateLimitError')}
             </div>
-            <p className="text-amber-700 pl-7">{t('form.rateLimitHint')}</p>
+            <p className="text-amber-700 pl-7">{t('form.rateLimitHint', { provider: currentProvider.label })}</p>
+            {errorApiKeyMask && (
+              <p className="ml-7 mt-2 text-amber-800 font-mono text-xs bg-amber-100 border border-amber-200 rounded-lg px-2 py-1">
+                {t('form.usedApiKey', { key: errorApiKeyMask })}
+              </p>
+            )}
             <div className="pl-7">
               <a
-                href="https://aistudio.google.com/api-keys"
+                href={currentProvider.apiKeyUrl}
                 target="_blank"
                 rel="noopener noreferrer"
                 className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-amber-500 hover:bg-amber-600 text-white text-xs font-semibold rounded-lg transition-colors"
@@ -840,7 +1030,7 @@ export function PresentationForm({ userId, canGenerate }: PresentationFormProps)
                 <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
                 </svg>
-                {t('form.getApiKey')}
+                {t('form.getApiKey', { provider: currentProvider.label })}
               </a>
             </div>
           </div>
@@ -850,7 +1040,14 @@ export function PresentationForm({ userId, canGenerate }: PresentationFormProps)
             <svg className="w-5 h-5 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
             </svg>
-            {t('form.invalidApiKeyError')}
+            <div>
+              <p>{t('form.invalidApiKeyError')}</p>
+              {errorApiKeyMask && (
+                <p className="mt-2 font-mono text-xs bg-red-100 border border-red-200 rounded-lg px-2 py-1">
+                  {t('form.usedApiKey', { key: errorApiKeyMask })}
+                </p>
+              )}
+            </div>
           </div>
         )}
         {error && !errorType && (

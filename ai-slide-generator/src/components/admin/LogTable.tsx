@@ -11,6 +11,16 @@ export default function LogTable({ logs }: LogTableProps) {
   const [selectedLog, setSelectedLog] = useState<any>(null)
   const [copyStatus, setCopyStatus] = useState<string | null>(null)
 
+  const getProviderLabel = (provider?: string) => {
+    if (provider === 'openai') return 'ChatGPT'
+    return 'Gemini'
+  }
+
+  const getProviderBadgeClass = (provider?: string) => {
+    if (provider === 'openai') return 'bg-slate-900 text-white'
+    return 'bg-blue-100 text-blue-700'
+  }
+
   const handleCopy = (text: string, type: string) => {
     navigator.clipboard.writeText(text)
     setCopyStatus(type)
@@ -42,6 +52,14 @@ export default function LogTable({ logs }: LogTableProps) {
                     <p className="text-sm font-medium text-gray-900 truncate">{log.users?.full_name || 'System'}</p>
                     <p className="text-sm text-gray-500 truncate">{log.users?.email || 'N/A'}</p>
                     <p className="text-[10px] text-gray-400 font-mono mt-1">ID: {log.id.substring(0, 8)}...</p>
+                    <div className="flex flex-wrap gap-1 mt-2">
+                      <span className={`px-2 py-0.5 text-[10px] font-bold rounded-full uppercase ${getProviderBadgeClass(log.provider)}`}>
+                        {getProviderLabel(log.provider)}
+                      </span>
+                      <span className="px-2 py-0.5 text-[10px] font-mono bg-gray-100 text-gray-600 rounded-full">
+                        {log.model || 'gemini-2.5-flash'}
+                      </span>
+                    </div>
                   </div>
                   <div className="px-6 py-4 w-2/5">
                     <div className="mb-2">
@@ -121,6 +139,14 @@ export default function LogTable({ logs }: LogTableProps) {
                   <p className="font-medium text-gray-900">{selectedLog.users?.full_name}</p>
                 </div>
                 <p className="text-sm text-gray-500">{selectedLog.users?.email}</p>
+                <div className="flex flex-wrap gap-2 mt-3">
+                  <span className={`px-3 py-1 text-xs font-bold rounded-lg uppercase ${getProviderBadgeClass(selectedLog.provider)}`}>
+                    {getProviderLabel(selectedLog.provider)}
+                  </span>
+                  <span className="px-3 py-1 text-xs font-mono bg-white text-gray-700 border border-gray-200 rounded-lg">
+                    {selectedLog.model || 'gemini-2.5-flash'}
+                  </span>
+                </div>
               </div>
               <div className="text-right">
                 <div className="flex justify-end items-center gap-2 mb-2">

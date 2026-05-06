@@ -39,7 +39,7 @@ export default async function AdminLogsPage() {
   return (
     <div className="p-8">
       <div className="flex items-center justify-between mb-6">
-        <h1 className="text-2xl font-bold">AI Logs (Gemini)</h1>
+        <h1 className="text-2xl font-bold">AI Logs</h1>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">

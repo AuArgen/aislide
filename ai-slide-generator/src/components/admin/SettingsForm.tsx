@@ -7,8 +7,47 @@ interface SettingsFormProps {
   initialSettings: Record<string, string>
 }
 
+const SETTINGS_FIELDS = [
+  {
+    key: 'GEMINI_API_KEY',
+    label: 'Gemini API Key',
+    type: 'password',
+    placeholder: 'Google Gemini генерация үчүн ачкыч',
+  },
+  {
+    key: 'OPENAI_API_KEY',
+    label: 'OpenAI / ChatGPT API Key',
+    type: 'password',
+    placeholder: 'ChatGPT генерация үчүн ачкыч',
+  },
+  {
+    key: 'UNSPLASH_ACCESS_KEY',
+    label: 'Unsplash Access Key',
+    type: 'password',
+    placeholder: 'Сүрөттөр үчүн ачкыч',
+  },
+  {
+    key: 'ADMIN_QR_CODE',
+    label: 'Admin QR Code URL',
+    type: 'text',
+    placeholder: 'Төлөм үчүн QR-код шилтемеси',
+  },
+  {
+    key: 'ADMIN_CARD_INFO',
+    label: 'Admin Card Details',
+    type: 'text',
+    placeholder: 'Карта номери жана аты-жөнү',
+  },
+] as const
+
 export function SettingsForm({ initialSettings }: SettingsFormProps) {
-  const [settings, setSettings] = useState(initialSettings)
+  const [settings, setSettings] = useState(() => {
+    const normalized: Record<string, string> = {}
+    for (const field of SETTINGS_FIELDS) {
+      normalized[field.key] = initialSettings[field.key] ?? initialSettings[field.key.toLowerCase()] ?? ''
+    }
+    return normalized
+  })
   const [loading, setLoading] = useState(false)
   const [message, setMessage] = useState<{ type: 'success' | 'error', text: string } | null>(null)
 
@@ -19,7 +58,7 @@ export function SettingsForm({ initialSettings }: SettingsFormProps) {
 
     try {
       const results = await Promise.all(
-        Object.entries(settings).map(([key, value]) => updateSetting(key, value))
+        SETTINGS_FIELDS.map(field => updateSetting(field.key, settings[field.key] ?? ''))
       )
 
       if (results.every(r => r.success)) {
@@ -41,57 +80,20 @@ export function SettingsForm({ initialSettings }: SettingsFormProps) {
   return (
     <form onSubmit={handleSubmit} className="space-y-6">
       <div className="space-y-4">
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">
-            Gemini API Key
-          </label>
-          <input
-            type="password"
-            value={settings['GEMINI_API_KEY'] || ''}
-            onChange={(e) => handleChange('GEMINI_API_KEY', e.target.value)}
-            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition-all"
-            placeholder="AI генерация үчүн ачкыч"
-          />
-        </div>
-
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">
-            Unsplash Access Key
-          </label>
-          <input
-            type="password"
-            value={settings['UNSPLASH_ACCESS_KEY'] || ''}
-            onChange={(e) => handleChange('UNSPLASH_ACCESS_KEY', e.target.value)}
-            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition-all"
-            placeholder="Сүрөттөр үчүн ачкыч"
-          />
-        </div>
-
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">
-            Admin QR Code URL
-          </label>
-          <input
-            type="text"
-            value={settings['ADMIN_QR_CODE'] || ''}
-            onChange={(e) => handleChange('ADMIN_QR_CODE', e.target.value)}
-            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition-all"
-            placeholder="Төлөм үчүн QR-код шилтемеси"
-          />
-        </div>
-
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">
-            Admin Card Details
-          </label>
-          <input
-            type="text"
-            value={settings['ADMIN_CARD_INFO'] || ''}
-            onChange={(e) => handleChange('ADMIN_CARD_INFO', e.target.value)}
-            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition-all"
-            placeholder="Карта номери жана аты-жөнү"
-          />
-        </div>
+        {SETTINGS_FIELDS.map(field => (
+          <div key={field.key}>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              {field.label}
+            </label>
+            <input
+              type={field.type}
+              value={settings[field.key] || ''}
+              onChange={(e) => handleChange(field.key, e.target.value)}
+              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition-all"
+              placeholder={field.placeholder}
+            />
+          </div>
+        ))}
       </div>
 
       {message && (

@@ -6,6 +6,8 @@ import { randomUUID } from 'node:crypto'
 export async function saveAiLog(data: {
   user_id: string
   presentation_id?: string | null
+  provider?: string | null
+  model?: string | null
   prompt: string
   client_prompt?: string | null
   full_prompt?: string | null
@@ -20,13 +22,15 @@ export async function saveAiLog(data: {
     const now = new Date().toISOString()
     db.prepare(`
       INSERT INTO ai_logs
-        (id, user_id, presentation_id, prompt, client_prompt, full_prompt, response,
+        (id, user_id, presentation_id, provider, model, prompt, client_prompt, full_prompt, response,
          is_valid, tokens_used, cost_usd, duration_ms, created_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
       id,
       data.user_id,
       data.presentation_id ?? null,
+      data.provider ?? 'gemini',
+      data.model ?? 'gemini-2.5-flash',
       data.prompt,
       data.client_prompt ?? null,
       data.full_prompt ?? null,
@@ -48,6 +52,8 @@ export async function updateAiLog(
   id: string,
   data: {
     presentation_id?: string | null
+    provider?: string | null
+    model?: string | null
     response?: string | null
     is_valid?: boolean
     tokens_used?: number
@@ -61,6 +67,8 @@ export async function updateAiLog(
     const values: any[] = []
 
     if (data.presentation_id !== undefined) { fields.push('presentation_id = ?'); values.push(data.presentation_id) }
+    if (data.provider !== undefined) { fields.push('provider = ?'); values.push(data.provider) }
+    if (data.model !== undefined) { fields.push('model = ?'); values.push(data.model) }
     if (data.response !== undefined) { fields.push('response = ?'); values.push(data.response) }
     if (data.is_valid !== undefined) { fields.push('is_valid = ?'); values.push(data.is_valid ? 1 : 0) }
     if (data.tokens_used !== undefined) { fields.push('tokens_used = ?'); values.push(data.tokens_used) }

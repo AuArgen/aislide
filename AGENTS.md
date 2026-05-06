@@ -1,6 +1,6 @@
-# CLAUDE.md
+# AGENTS.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+This file provides guidance to Codex (Codex.ai/code) when working with code in this repository.
 
 ## Repository Layout
 
@@ -31,7 +31,7 @@ There are no test commands — the project has no test suite.
 
 ### App Shell & Layout
 
-The UI uses a **claude.ai-style sidebar layout**:
+The UI uses a **Codex.ai-style sidebar layout**:
 
 - **Left sidebar** (`AppSidebar`, 260px, `#0f172a` dark slate) — logo, "New Presentation" button, recent presentations list, language switcher, admin link, user profile + sign-out.
 - **Right content area** (white, `rounded-l-2xl`) — `PresentationForm` for authenticated users, `LandingContent` for guests.
