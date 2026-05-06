@@ -10,6 +10,7 @@ import { presentationTemplates } from '@/lib/templates'
 import type { Slide, SlideLayoutType } from '@/types/elements'
 import { useT } from '@/components/shared/LanguageProvider'
 import { generateSingleSlideAction } from '@/lib/actions/gemini'
+import { updatePresentation } from '@/lib/actions/user'
 
 interface SlideSidebarPanelProps {
   isSaving: boolean
@@ -107,6 +108,10 @@ export function SlideSidebarPanel({
           background: slide.background,
           titleColor: slide.titleColor,
         })
+        // Immediately persist — don't rely solely on the debounced auto-save
+        // because the user might refresh before the 1500ms debounce fires.
+        const latestSlides = useSlidesStore.getState().slides
+        updatePresentation(presentationId, { slides: latestSlides }).catch(() => {})
       } else {
         const err = (result as any).error as string
         showRegenError(err === 'RATE_LIMIT' ? 'rate-limit' : 'general')

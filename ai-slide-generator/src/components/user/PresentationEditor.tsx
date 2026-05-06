@@ -589,7 +589,7 @@ function PresentationEditorInner({
 
   // ── Media overlay state ─────────────────────────────────────────────────
   const [showImageUploader, setShowImageUploader] = useState(false)
-  const [replaceImageTargetId, setReplaceImageTargetId] = useState<string | null>(null)
+  const replaceImageTargetId = useRef<string | null>(null)
   const [showIconPicker, setShowIconPicker] = useState(false)
   const [iconPickerTargetId, setIconPickerTargetId] = useState<string | null>(null)
   const [contextMenu, setContextMenu] = useState<{ x: number, y: number } | null>(null)
@@ -1047,15 +1047,26 @@ function PresentationEditorInner({
       {showImageUploader && (
         <ImageUploader
           onInsert={src => {
-            if (replaceImageTargetId) {
+            const targetId = replaceImageTargetId.current
+            if (targetId) {
               useSlidesStore.getState().saveHistorySnapshot()
-              updateElement<ImageElement>(replaceImageTargetId, { src } as Partial<ImageElement>)
-              setReplaceImageTargetId(null)
+              useSlidesStore.setState(s => {
+                const activeIdx = s.slides.findIndex(sl => sl.id === s.activeSlideId)
+                if (activeIdx === -1) return s
+                const slide = s.slides[activeIdx]
+                const newElements = slide.elements.map(el =>
+                  el.id === targetId ? { ...el, src } : el
+                )
+                const newSlides = [...s.slides]
+                newSlides[activeIdx] = { ...slide, elements: newElements }
+                return { slides: newSlides }
+              })
+              replaceImageTargetId.current = null
             } else {
               insertImage(src)
             }
           }}
-          onClose={() => { setShowImageUploader(false); setReplaceImageTargetId(null) }}
+          onClose={() => { setShowImageUploader(false); replaceImageTargetId.current = null }}
         />
       )}
       {showIconPicker && (
@@ -1128,7 +1139,7 @@ function PresentationEditorInner({
                 break;
               case 'replace-image':
                 if (selectedElement && isImage(selectedElement)) {
-                  setReplaceImageTargetId(selectedElement.id)
+                  replaceImageTargetId.current = selectedElement.id
                 }
                 setShowImageUploader(true)
                 break;
