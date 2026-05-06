@@ -80,6 +80,7 @@ export function MyComponent() {
 - Context menu: `ctxUndo`, `ctxRedo`, `ctxCut`, `ctxCopy`, `ctxPaste`, `ctxDuplicate`, `ctxBringForward`, `ctxSendBackward`, `ctxDelete`
 - Thumbnail: `thumbShow`, `thumbHide`, `thumbDuplicate`, `thumbDelete`
 - Misc: `linkCopied`, `loading`, `emptyCanvas`, `layers`, `togglePanel`, `fillColor`, `fill`, `strokeColor`, `stroke`, `customColor`, `applyBgAll`
+- View tab: `zoom`, `grid`, `slideshow`
 
 **Wizard-specific translation keys** added under `form.*`:
 `createOutline`, `outlineReady`, `outlineSubtitle`, `coreMessage`, `slideTitle`, `regenerateOutline`, `backToInput`, `generateFromOutline`, `attachFile`, `attachedFiles`, `removeFile`, `rateLimitError`, `rateLimitHint`, `getApiKey`, `apiKeyHint`, `invalidApiKeyError`.
@@ -247,11 +248,31 @@ The editor toolbar (`PresentationEditor.tsx`) is organized into **four tabs**, s
 | **Дизайн** (Design) | Slide background: solid color presets + gradient presets + image upload. Always changes the **slide** background, never the selected element. Shows `⚠ Слайддын фону` warning when an element is selected to prevent confusion. Uses `setSlideBackground()` from the store — never `updateSlideField('background', ...)`. |
 | **Вид** (View) | Zoom controls (−/+/%), Grid toggle |
 
+**Tab bar right side (always visible, outside tabs):** `SyncStatusBadge` · slide counter · **Slideshow button** (`▶ Слайдшоу`, `editor.slideshow` key) · right panel toggle. The slideshow button is always visible regardless of active tab.
+
 **Key editor behaviors:**
 - `Backspace`/`Delete` deletes the **active slide** only when focus is inside `[data-sidebar-panel]` (the slide sidebar). Pressing Backspace in the toolbar, canvas, or any other UI does NOT delete a slide.
 - New slides added via `addSlide()` automatically inherit `bg`, `background`, and `titleColor` from the active slide, keeping the presentation visually consistent.
 - `FontDropdown` uses `position: fixed` + `getBoundingClientRect()` so the dropdown is never clipped by the toolbar's `overflow: auto` scroll container.
 - Speaker notes panel has been removed from the editor layout.
+
+### Fullscreen Slideshow
+
+Triggered by the **▶ Слайдшоу** button in the toolbar tab bar. Renders a fullscreen overlay (`z-index: 9999`) over the editor — no route change.
+
+**State in `PresentationEditor`:**
+- `showSlideshow: boolean` — overlay visibility
+- `slideshowIndex: number` — current slide (starts from `currentSlideIndex`)
+- `slideshowScale: number` — computed as `min(window.innerWidth / 1920, window.innerHeight / 1080)`, updated on `resize`
+- `slideshowDir: 'next' | 'prev'` — controls enter animation direction
+
+**Slide rendering:** A wrapper div at `CANVAS_W * scale × CANVAS_H * scale` (exact visual size) contains the 1920×1080 slide div with `transform: scale(scale), transformOrigin: 'top left'`. This avoids layout overflow that `center center` origin causes. `buildSlideStyle()` is applied directly — slide backgrounds render correctly.
+
+**Transitions:** CSS keyframes injected via `<style>` tag. The animated div has a `key={slideshowIndex}` — React remounts it on each navigation, restarting the animation cleanly.
+- Next (→ / Space / click): `ss-in-next` — `translateX(5%)` → `translateX(0)` + fade, 380ms `cubic-bezier(0.4,0,0.2,1)`
+- Prev (←): `ss-in-prev` — `translateX(-5%)` → `translateX(0)` + fade, same timing
+
+**Navigation:** `ssNext()` / `ssPrev()` callbacks (wrapped in `useCallback`) set direction then index. Keyboard handler in `useEffect` (active only when `showSlideshow === true`) listens for `Escape`, `ArrowRight`/`ArrowDown`/`Space` (next), `ArrowLeft`/`ArrowUp` (prev). Clicking the slide area also advances. Prev/next arrow buttons appear on hover at the screen edges. Counter `N / total` and ✕ close button are fixed top-right.
 
 ### Slide Element Types
 
