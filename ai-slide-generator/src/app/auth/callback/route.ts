@@ -4,8 +4,17 @@ import { upsertUser } from '@/lib/auth/auth-db'
 import { signJWT } from '@/lib/auth/jwt'
 import type { NextRequest } from 'next/server'
 
+function getRequestOrigin(request: NextRequest) {
+  const proto = request.headers.get('x-forwarded-proto') ?? request.nextUrl.protocol.replace(':', '')
+  const host = request.headers.get('x-forwarded-host') ?? request.headers.get('host')
+
+  if (host) return `${proto}://${host}`
+  return request.nextUrl.origin
+}
+
 export async function GET(request: NextRequest) {
   const requestUrl = new URL(request.url)
+  const origin = getRequestOrigin(request)
   const token = requestUrl.searchParams.get('token')
 
   if (token) {
@@ -14,7 +23,7 @@ export async function GET(request: NextRequest) {
 
       if (!payload) {
         console.error('Invalid token format')
-        return NextResponse.redirect(`${requestUrl.origin}/auth/error`)
+        return NextResponse.redirect(`${origin}/auth/error`)
       }
 
       const googleId = payload.google_id
@@ -24,7 +33,7 @@ export async function GET(request: NextRequest) {
 
       if (!googleId || !email) {
         console.error('Invalid token payload:', payload)
-        return NextResponse.redirect(`${requestUrl.origin}/auth/error`)
+        return NextResponse.redirect(`${origin}/auth/error`)
       }
 
       const { role, expires_at } = await checkExternalRole(googleId)
@@ -40,13 +49,13 @@ export async function GET(request: NextRequest) {
 
       if (!savedUser) {
         console.error('Failed to save user')
-        return NextResponse.redirect(`${requestUrl.origin}/auth/error`)
+        return NextResponse.redirect(`${origin}/auth/error`)
       }
 
       const jwtSecret = process.env.JWT_SECRET
       if (!jwtSecret) {
         console.error('JWT_SECRET is not set in environment variables')
-        return NextResponse.redirect(`${requestUrl.origin}/auth/error`)
+        return NextResponse.redirect(`${origin}/auth/error`)
       }
 
       const internalToken = await signJWT({
@@ -58,7 +67,7 @@ export async function GET(request: NextRequest) {
         expires_at,
       }, jwtSecret)
 
-      const response = NextResponse.redirect(`${requestUrl.origin}/`)
+      const response = NextResponse.redirect(`${origin}/`)
       response.cookies.set('auth_token', internalToken, {
         path: '/',
         maxAge: 60 * 60 * 24 * 7,
@@ -68,9 +77,9 @@ export async function GET(request: NextRequest) {
       return response
     } catch (error) {
       console.error('Error processing token:', error)
-      return NextResponse.redirect(`${requestUrl.origin}/auth/error`)
+      return NextResponse.redirect(`${origin}/auth/error`)
     }
   }
 
-  return NextResponse.redirect(`${requestUrl.origin}/`)
+  return NextResponse.redirect(`${origin}/`)
 }

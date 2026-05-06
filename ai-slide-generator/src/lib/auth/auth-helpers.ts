@@ -62,12 +62,7 @@ export async function getCurrentSession() {
 }
 
 export function signInWithGoogle() {
-  const authServiceUrl = process.env.NEXT_PUBLIC_AUTH_SERVICE_URL
-  if (!authServiceUrl) {
-    console.error('NEXT_PUBLIC_AUTH_SERVICE_URL is not set.')
-    return
-  }
-  window.location.href = authServiceUrl
+  window.location.href = '/api/auth/google-login'
 }
 
 export function signOut() {
