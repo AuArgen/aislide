@@ -36,8 +36,12 @@ interface OutlineItem {
 interface AttachedFile {
   id: string
   name: string
-  type: 'image' | 'text'
+  type: 'image' | 'text' | 'document'
   content: string
+  pages?: number
+  chars?: number
+  loading?: boolean
+  parseError?: string
 }
 
 interface PresentationFormProps {
@@ -86,35 +90,62 @@ export function PresentationForm({ userId, canGenerate }: PresentationFormProps)
 
   const handleFileSelect = async (files: FileList | null) => {
     if (!files?.length) return
-    const newFiles: AttachedFile[] = []
 
     for (const file of Array.from(files)) {
       const id = Math.random().toString(36).slice(2)
+      const nameLower = file.name.toLowerCase()
 
       if (file.type.startsWith('image/')) {
+        setAttachedFiles(prev => [...prev, { id, name: file.name, type: 'image', content: '', loading: true }])
         const formData = new FormData()
         formData.append('image', file)
         try {
           const res = await fetch('/api/upload', { method: 'POST', body: formData })
           const data = await res.json()
-          newFiles.push({ id, name: file.name, type: 'image', content: data.url || file.name })
+          setAttachedFiles(prev => prev.map(f => f.id === id ? { ...f, content: data.url || file.name, loading: false } : f))
         } catch {
-          newFiles.push({ id, name: file.name, type: 'image', content: file.name })
+          setAttachedFiles(prev => prev.map(f => f.id === id ? { ...f, content: file.name, loading: false } : f))
+        }
+      } else if (nameLower.endsWith('.pdf') || nameLower.endsWith('.docx')) {
+        setAttachedFiles(prev => [...prev, { id, name: file.name, type: 'document', content: '', loading: true }])
+        const formData = new FormData()
+        formData.append('file', file)
+        try {
+          const res = await fetch('/api/parse-document', { method: 'POST', body: formData })
+          if (!res.ok) {
+            const err = await res.json().catch(() => ({}))
+            throw new Error(err.error || 'Parse failed')
+          }
+          const data = await res.json()
+          setAttachedFiles(prev => prev.map(f =>
+            f.id === id ? { ...f, content: data.text, pages: data.pages, chars: data.chars, loading: false } : f
+          ))
+        } catch (err: any) {
+          setAttachedFiles(prev => prev.map(f =>
+            f.id === id ? { ...f, loading: false, parseError: err.message || 'Ошибка парсинга' } : f
+          ))
         }
       } else {
-        const text = await file.text().catch(() => '')
-        newFiles.push({ id, name: file.name, type: 'text', content: text.slice(0, 8000) })
+        setAttachedFiles(prev => [...prev, { id, name: file.name, type: 'text', content: '', loading: true }])
+        try {
+          const text = await file.text()
+          const sliced = text.slice(0, 15000)
+          setAttachedFiles(prev => prev.map(f =>
+            f.id === id ? { ...f, content: sliced, chars: sliced.length, loading: false } : f
+          ))
+        } catch {
+          setAttachedFiles(prev => prev.map(f =>
+            f.id === id ? { ...f, loading: false, parseError: 'Ошибка чтения' } : f
+          ))
+        }
       }
     }
-
-    setAttachedFiles(prev => [...prev, ...newFiles])
   }
 
-  // Text file content for AI context
   const buildTextContext = (): string | undefined => {
-    const texts = attachedFiles.filter(f => f.type === 'text')
-    if (!texts.length) return undefined
-    return texts.map(f => `[File "${f.name}"]:\n${f.content}`).join('\n\n---\n\n')
+    const textFiles = attachedFiles.filter(f => (f.type === 'text' || f.type === 'document') && f.content && !f.loading && !f.parseError)
+    if (!textFiles.length) return undefined
+    return textFiles.map(f => `[File "${f.name}"]:\n${f.content}`).join('\n\n---\n\n')
   }
 
   // Image files for AI to decide their usage
@@ -533,7 +564,7 @@ export function PresentationForm({ userId, canGenerate }: PresentationFormProps)
           <input
             ref={fileInputRef}
             type="file"
-            accept="image/png,image/jpeg,image/webp,.txt,.md"
+            accept="image/png,image/jpeg,image/webp,.txt,.md,.pdf,.docx"
             multiple
             className="hidden"
             onChange={e => { handleFileSelect(e.target.files); e.target.value = '' }}
@@ -543,33 +574,69 @@ export function PresentationForm({ userId, canGenerate }: PresentationFormProps)
         {/* Attached files chips */}
         {attachedFiles.length > 0 && (
           <div className="flex flex-wrap gap-2">
-            {attachedFiles.map(file => (
-              <div
-                key={file.id}
-                className="flex items-center gap-1.5 bg-gray-50 border border-gray-200 rounded-lg px-3 py-1.5 text-xs"
-              >
-                {file.type === 'image' ? (
-                  <svg className="w-3.5 h-3.5 text-emerald-500 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                  </svg>
-                ) : (
-                  <svg className="w-3.5 h-3.5 text-blue-500 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                  </svg>
-                )}
-                <span className="max-w-[120px] truncate text-gray-700 font-medium">{file.name}</span>
-                <button
-                  type="button"
-                  onClick={() => setAttachedFiles(prev => prev.filter(f => f.id !== file.id))}
-                  className="text-gray-400 hover:text-red-500 transition-colors ml-0.5 flex-shrink-0"
-                  title={t('form.removeFile')}
+            {attachedFiles.map(file => {
+              const ext = file.name.split('.').pop()?.toUpperCase() ?? ''
+              const isPdf = ext === 'PDF'
+              const isDocx = ext === 'DOCX'
+              const isImage = file.type === 'image'
+              const hasError = !!file.parseError
+
+              const badgeColor = hasError
+                ? 'bg-red-100 text-red-600'
+                : isImage
+                  ? 'bg-emerald-100 text-emerald-700'
+                  : isPdf
+                    ? 'bg-red-100 text-red-700'
+                    : isDocx
+                      ? 'bg-blue-100 text-blue-700'
+                      : 'bg-gray-100 text-gray-600'
+
+              const badgeLabel = hasError ? '!' : isImage ? 'IMG' : ext || 'TXT'
+
+              const meta = file.loading
+                ? 'читается...'
+                : hasError
+                  ? file.parseError
+                  : file.pages
+                    ? `${file.pages} стр.`
+                    : file.chars
+                      ? `${Math.round(file.chars / 1000)}K симв.`
+                      : null
+
+              return (
+                <div
+                  key={file.id}
+                  className={`flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs border ${hasError ? 'bg-red-50 border-red-200' : 'bg-gray-50 border-gray-200'}`}
                 >
-                  <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                  </svg>
-                </button>
-              </div>
-            ))}
+                  {file.loading ? (
+                    <svg className="w-3.5 h-3.5 text-blue-400 flex-shrink-0 animate-spin" viewBox="0 0 24 24" fill="none">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                    </svg>
+                  ) : (
+                    <span className={`inline-flex items-center justify-center rounded px-1 py-0.5 text-[10px] font-bold leading-none flex-shrink-0 ${badgeColor}`}>
+                      {badgeLabel}
+                    </span>
+                  )}
+                  <span className="max-w-[110px] truncate text-gray-700 font-medium">{file.name}</span>
+                  {meta && (
+                    <span className={`text-[10px] flex-shrink-0 ${hasError ? 'text-red-500' : 'text-gray-400'}`}>
+                      {meta}
+                    </span>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => setAttachedFiles(prev => prev.filter(f => f.id !== file.id))}
+                    className="text-gray-400 hover:text-red-500 transition-colors ml-0.5 flex-shrink-0"
+                    title={t('form.removeFile')}
+                  >
+                    <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                  </button>
+                </div>
+              )
+            })}
           </div>
         )}
 
