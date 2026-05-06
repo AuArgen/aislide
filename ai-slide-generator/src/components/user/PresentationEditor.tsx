@@ -589,6 +589,7 @@ function PresentationEditorInner({
 
   // ── Media overlay state ─────────────────────────────────────────────────
   const [showImageUploader, setShowImageUploader] = useState(false)
+  const [replaceImageTargetId, setReplaceImageTargetId] = useState<string | null>(null)
   const [showIconPicker, setShowIconPicker] = useState(false)
   const [iconPickerTargetId, setIconPickerTargetId] = useState<string | null>(null)
   const [contextMenu, setContextMenu] = useState<{ x: number, y: number } | null>(null)
@@ -1045,8 +1046,16 @@ function PresentationEditorInner({
       {/* ── Modals ─────────────────────────────────────────────────────────── */}
       {showImageUploader && (
         <ImageUploader
-          onInsert={src => insertImage(src)}
-          onClose={() => setShowImageUploader(false)}
+          onInsert={src => {
+            if (replaceImageTargetId) {
+              useSlidesStore.getState().saveHistorySnapshot()
+              updateElement<ImageElement>(replaceImageTargetId, { src } as Partial<ImageElement>)
+              setReplaceImageTargetId(null)
+            } else {
+              insertImage(src)
+            }
+          }}
+          onClose={() => { setShowImageUploader(false); setReplaceImageTargetId(null) }}
         />
       )}
       {showIconPicker && (
@@ -1118,6 +1127,9 @@ function PresentationEditorInner({
                   updateElement(selectedElement.id, { fill: data.color } as any)
                 break;
               case 'replace-image':
+                if (selectedElement && isImage(selectedElement)) {
+                  setReplaceImageTargetId(selectedElement.id)
+                }
                 setShowImageUploader(true)
                 break;
               case 'bg-color':
