@@ -1,0 +1,23 @@
+services:
+  aislide:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: aislide
+    restart: unless-stopped
+    env_file:
+      - ./ai-slide-generator/.env.local
+    environment:
+      NODE_ENV: production
+      PORT: 3000
+      HOSTNAME: 0.0.0.0
+      DATABASE_PATH: /app/data/app.db
+    ports:
+      - "${APP_PORT:-3000}:3000"
+    volumes:
+      - aislide-data:/app/data
+      - aislide-uploads:/app/public/uploads
+
+volumes:
+  aislide-data:
+  aislide-uploads:

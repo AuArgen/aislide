@@ -1,0 +1,15 @@
+.git
+.claude
+logs
+docs
+README.md
+GEMINI.md
+CLAUDE.md
+AGENTS.md
+
+ai-slide-generator/.next
+ai-slide-generator/node_modules
+ai-slide-generator/data
+ai-slide-generator/public/uploads
+ai-slide-generator/.env.local
+ai-slide-generator/tsconfig.tsbuildinfo
