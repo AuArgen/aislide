@@ -70,6 +70,8 @@ export function MyComponent() {
 
 **Language preference storage:** `localStorage` (immediate) + `users.preferred_language` column in SQLite (synced via `/api/user/language`).
 
+**Editor-specific translation keys** live under `editor.*` (e.g. `editor.tabHome`, `editor.insertShape`, `editor.bgColor`). The editor component imports `useT` and uses these keys for all toolbar text.
+
 ### Authentication
 
 Auth is split across two systems:
@@ -157,14 +159,41 @@ Six Zustand stores in `src/store/`:
 
 Auto-save is debounced in `src/lib/hooks/useAutoSave.ts` and calls `updatePresentation` Server Action.
 
+### Editor Toolbar (Word-style tabs)
+
+The editor toolbar (`PresentationEditor.tsx`) is organized into **four tabs**, similar to MS Word's ribbon:
+
+| Tab | Content |
+|---|---|
+| **Башкы** (Home) | Context-aware: when element selected → font/size/B/I/U/align/colors + shape fill+stroke + X/Y/W/H/R; when nothing selected → slide font, title size, title color |
+| **Вставить** (Insert) | Add elements: Text, Image, Shape (with 11-type picker dropdown), Formula, Code, Icon, Video |
+| **Дизайн** (Design) | Slide background: solid color presets + gradient presets + image upload. Always changes the **slide** background, never the selected element. Shows `⚠ Слайддын фону` warning when an element is selected to prevent confusion. Uses `setSlideBackground()` from the store — never `updateSlideField('background', ...)`. |
+| **Вид** (View) | Zoom controls (−/+/%), Grid toggle |
+
+**Key editor behaviors:**
+- `Backspace`/`Delete` deletes the **active slide** only when focus is inside `[data-sidebar-panel]` (the slide sidebar). Pressing Backspace in the toolbar, canvas, or any other UI does NOT delete a slide.
+- New slides added via `addSlide()` automatically inherit `bg`, `background`, and `titleColor` from the active slide, keeping the presentation visually consistent.
+- `FontDropdown` uses `position: fixed` + `getBoundingClientRect()` so the dropdown is never clipped by the toolbar's `overflow: auto` scroll container.
+- Speaker notes panel has been removed from the editor layout.
+
 ### Slide Element Types
 
 All element types are defined in `src/types/elements.ts` as a discriminated union on `type`:
 `text` · `image` · `shape` · `line` · `formula` · `code` · `group`
 
-Elements use a pixel coordinate system — canvas is **800 × 600 px** (16:9). Properties `x`, `y`, `width`, `height` are all in this space.
+Elements use a pixel coordinate system — canvas is **1920 × 1080 px** (16:9). Properties `x`, `y`, `width`, `height` are all in this space.
 
 Editor utilities (snap, align, group, transform) live in `src/lib/editor/`.
+
+**ShapeElement** key fields: `shapeKind` (rect/circle/triangle/diamond/star/hexagon/arrow-right/arrow-left/line/speech-bubble/cloud), `fill` (hex), `fillType` ('solid'|'gradient'), `stroke` (hex), `strokeWidth` (px). Shape fill and stroke colors are editable directly in the **Башкы** toolbar tab when a shape is selected.
+
+### Slide Background
+
+Slide background is stored in two fields on `Slide`:
+- `bg: SlideBackground` — structured object `{ type: 'solid'|'gradient'|'image', value: string, overlayColor?, overlayOpacity? }`. **This takes precedence in `buildSlideStyle()`.**
+- `background: string` — legacy plain string (hex or gradient CSS). Only used as fallback if `bg` is absent.
+
+**Always use `setSlideBackground(slideId, bg)` from `slidesStore`** to change a slide's background. Never use `updateSlideField('background', ...)` — since `bg` always exists (set by `makeBlankSlide`), the `background` field is never reached and those updates have no visual effect.
 
 ### Export
 
@@ -208,3 +237,4 @@ DATABASE_PATH             # Optional; defaults to ./data/app.db
 - Telegram notifications fire on payment approval/rejection via `src/lib/telegram.ts`.
 - `src/lib/geminiLayouts.ts` and `src/lib/templates.ts` define the prompt templates and layout schemas sent to Gemini.
 - Custom scrollbar classes: `custom-scroll` (light, for white areas), `custom-scroll-dark` (dark, for the sidebar).
+- The slide sidebar panel has `data-sidebar-panel` attribute — used by `useSlideHotkeys` to scope Backspace/Delete to slide deletion only when the sidebar has focus.
