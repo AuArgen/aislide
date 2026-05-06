@@ -121,7 +121,7 @@ export function SlideSidebarPanel({
 
   // ── Render ────────────────────────────────────────────────────────────────────
   return (
-    <div className="w-[220px] shrink-0 bg-white border-r border-gray-200 flex flex-col shadow-sm">
+    <div data-sidebar-panel className="w-[220px] shrink-0 bg-white border-r border-gray-200 flex flex-col shadow-sm">
       <div className="px-3 py-2 border-b border-gray-100 flex flex-col gap-2 shrink-0">
         <Link href="/dashboard" className="flex items-center gap-1.5 text-[11px] font-bold text-gray-500 hover:text-blue-600 transition-colors bg-gray-50 hover:bg-blue-50 px-2 py-1.5 rounded-lg w-max">
           <Home size={12} /> Башкы бет

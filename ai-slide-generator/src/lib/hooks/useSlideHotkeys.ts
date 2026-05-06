@@ -2,6 +2,10 @@
  * useSlideHotkeys.ts
  * Global keyboard shortcuts for slide-level actions.
  * Must only fire when focus is NOT inside a text input / contentEditable.
+ *
+ * Backspace/Delete deletes the active slide ONLY when focus is inside the
+ * slide sidebar panel ([data-sidebar-panel]). This prevents accidental
+ * deletions while working in the toolbar or canvas.
  */
 'use client'
 
@@ -48,12 +52,18 @@ export function useSlideHotkeys() {
         return
       }
 
-      // Backspace / Delete — Delete active slide
+      // Backspace / Delete — Delete active slide ONLY when focus is inside the
+      // slide sidebar panel. This prevents accidental deletes while working in
+      // the toolbar, canvas or any other part of the UI.
       if ((e.key === 'Backspace' || e.key === 'Delete') && slides.length > 1) {
         const { selectedIds } = useEditorStore.getState()
         if (selectedIds.length === 0) {
-          e.preventDefault()
-          deleteSlide(activeSlideId)
+          const sidebarEl = document.querySelector('[data-sidebar-panel]')
+          const inSidebar = sidebarEl?.contains(document.activeElement)
+          if (inSidebar) {
+            e.preventDefault()
+            deleteSlide(activeSlideId)
+          }
         }
       }
     }

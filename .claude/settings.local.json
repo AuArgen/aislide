@@ -5,7 +5,10 @@
       "Bash(npm run *)",
       "Bash(grep -n \"apiKey = process.env.GEMINI_API_KEY$\" \"c:/OSPanel/home/aislide/ai-slide-generator/src/lib/gemini.ts\")",
       "Bash(npx tsc *)",
-      "Bash(npx next *)"
+      "Bash(npx next *)",
+      "Bash(node_modules\\\\.bin\\\\next lint *)",
+      "Bash(node_modules/.bin/next lint *)",
+      "Bash(node_modules/.bin/eslint src/components/user/PresentationEditor.tsx)"
     ]
   }
 }

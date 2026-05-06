@@ -217,7 +217,16 @@ export const useSlidesStore = create<SlidesState>((set, get) => {
     // ── Add ───────────────────────────────────────────────────────────────────
     addSlide({ layoutType = 'blank', afterId } = {}) {
       const newHistory = snapshot()
-      const slide = makeBlankSlide(layoutType)
+      const { slides: currentSlides, activeSlideId: currentActiveId } = get()
+      const activeSlide = currentSlides.find(s => s.id === currentActiveId)
+      // Inherit visual design (bg, colors) from the active slide so new slides
+      // feel consistent with the rest of the presentation.
+      const designOverrides = activeSlide ? {
+        bg: activeSlide.bg,
+        background: activeSlide.background,
+        titleColor: activeSlide.titleColor,
+      } : {}
+      const slide = makeBlankSlide(layoutType, designOverrides)
       let insertedIndex = 0
       set(s => {
         const slides = [...s.slides]

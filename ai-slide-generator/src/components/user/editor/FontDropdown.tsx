@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useRef } from 'react'
+import { useState, useRef, useEffect } from 'react'
 import { ChevronDown } from 'lucide-react'
 import { ALL_FONTS, GOOGLE_FONTS, SYSTEM_FONTS } from '@/lib/hooks/useFontManager'
 
@@ -12,16 +12,41 @@ interface Props {
 
 export function FontDropdown({ value, recentFonts, onChange }: Props) {
     const [isOpen, setIsOpen] = useState(false)
-    const ref = useRef<HTMLDivElement>(null)
+    const [pos, setPos] = useState({ top: 0, left: 0 })
+    const buttonRef = useRef<HTMLButtonElement>(null)
 
     const currentFont = ALL_FONTS.find(f => f.name === value) ?? ALL_FONTS[0]
 
-    const toggle = () => setIsOpen(v => !v)
+    const toggle = () => {
+        if (!isOpen && buttonRef.current) {
+            const r = buttonRef.current.getBoundingClientRect()
+            setPos({ top: r.bottom + 4, left: r.left })
+        }
+        setIsOpen(v => !v)
+    }
     const select = (name: string) => { onChange(name); setIsOpen(false) }
 
+    // Reposition on scroll/resize while open
+    useEffect(() => {
+        if (!isOpen) return
+        const update = () => {
+            if (buttonRef.current) {
+                const r = buttonRef.current.getBoundingClientRect()
+                setPos({ top: r.bottom + 4, left: r.left })
+            }
+        }
+        window.addEventListener('scroll', update, true)
+        window.addEventListener('resize', update)
+        return () => {
+            window.removeEventListener('scroll', update, true)
+            window.removeEventListener('resize', update)
+        }
+    }, [isOpen])
+
     return (
-        <div ref={ref} className="relative shrink-0">
+        <div className="relative shrink-0">
             <button
+                ref={buttonRef}
                 onClick={toggle}
                 className="flex items-center gap-1.5 bg-gray-50 border border-gray-200 rounded-lg px-2.5 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-100 transition-colors min-w-[120px]"
                 style={{ fontFamily: currentFont.family }}
@@ -32,12 +57,14 @@ export function FontDropdown({ value, recentFonts, onChange }: Props) {
 
             {isOpen && (
                 <>
-                    {/* Backdrop */}
-                    <div className="fixed inset-0 z-40" onClick={() => setIsOpen(false)} />
+                    {/* Full-viewport backdrop — closes dropdown on outside click */}
+                    <div className="fixed inset-0 z-[999]" onClick={() => setIsOpen(false)} />
 
-                    {/* Dropdown panel */}
-                    <div className="absolute top-full mt-1 left-0 z-50 bg-white border border-gray-200 rounded-xl shadow-2xl w-52 max-h-72 overflow-y-auto">
-
+                    {/* Dropdown panel — rendered at viewport level, never clipped by overflow */}
+                    <div
+                        className="fixed z-[1000] bg-white border border-gray-200 rounded-xl shadow-2xl w-52 max-h-72 overflow-y-auto custom-scroll"
+                        style={{ top: pos.top, left: pos.left }}
+                    >
                         {/* Recently used */}
                         {recentFonts.length > 0 && (
                             <div>
