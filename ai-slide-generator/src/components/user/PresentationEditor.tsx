@@ -12,7 +12,7 @@ import {
   Plus, AlignLeft, AlignCenter, AlignRight,
   Bold, Italic, Underline, ChevronLeft, ChevronRight,
   Check, Image, Shapes, Star, Video, Layers, Palette, PanelRight,
-  RotateCw, Grid, ZoomIn, ZoomOut, Home,
+  RotateCw, Grid, ZoomIn, ZoomOut, Home, Play, X as XIcon,
 } from 'lucide-react'
 import { useT } from '@/components/shared/LanguageProvider'
 import { FloatingTextToolbar } from './editor/FloatingTextToolbar'
@@ -594,6 +594,12 @@ function PresentationEditorInner({
   const [iconPickerTargetId, setIconPickerTargetId] = useState<string | null>(null)
   const [contextMenu, setContextMenu] = useState<{ x: number, y: number } | null>(null)
 
+  // ── Slideshow state ──────────────────────────────────────────────────────
+  const [showSlideshow, setShowSlideshow] = useState(false)
+  const [slideshowIndex, setSlideshowIndex] = useState(0)
+  const [slideshowScale, setSlideshowScale] = useState(1)
+  const [slideshowDir, setSlideshowDir] = useState<'next' | 'prev'>('next')
+
   // ── Toolbar tab state ────────────────────────────────────────────────────
   type ToolTab = 'home' | 'insert' | 'design' | 'view'
   const [toolTab, setToolTab] = useState<ToolTab>('home')
@@ -1018,6 +1024,39 @@ function PresentationEditorInner({
     return () => window.removeEventListener('paste', handleOSPaste)
   }, [addElement])
 
+  const ssNext = useCallback(() => {
+    setSlideshowDir('next')
+    setSlideshowIndex(i => Math.min(slides.length - 1, i + 1))
+  }, [slides.length])
+
+  const ssPrev = useCallback(() => {
+    setSlideshowDir('prev')
+    setSlideshowIndex(i => Math.max(0, i - 1))
+  }, [])
+
+  useEffect(() => {
+    if (!showSlideshow) return
+    const updateScale = () => {
+      setSlideshowScale(Math.min(window.innerWidth / CANVAS_W, window.innerHeight / CANVAS_H))
+    }
+    updateScale()
+    window.addEventListener('resize', updateScale)
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') { setShowSlideshow(false); return }
+      if (e.key === 'ArrowRight' || e.key === 'ArrowDown' || e.key === ' ') {
+        e.preventDefault(); ssNext()
+      }
+      if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') {
+        e.preventDefault(); ssPrev()
+      }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => {
+      window.removeEventListener('keydown', onKey)
+      window.removeEventListener('resize', updateScale)
+    }
+  }, [showSlideshow, CANVAS_W, CANVAS_H, ssNext, ssPrev])
+
   const handleFontChange = async (fontName: string) => {
     const family = await selectFont(fontName)
     updateSlideField(currentSlideIndex, 'style', { ...currentSlide?.style, fontFamily: fontName, _fontFamily: family })
@@ -1263,6 +1302,13 @@ function PresentationEditorInner({
           <div className="ml-auto flex items-center gap-2 pr-2">
             <SyncStatusBadge />
             <span className="text-xs text-gray-400 font-medium">{currentSlideIndex + 1}/{slides.length}</span>
+            <button
+              onClick={() => { setSlideshowIndex(currentSlideIndex); setShowSlideshow(true) }}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white text-[11px] font-semibold transition-colors"
+              title={t('editor.slideshow')}
+            >
+              <Play size={12} fill="currentColor" /> {t('editor.slideshow')}
+            </button>
             <button
               onClick={() => setIsRightPanelOpen(p => !p)}
               className={`p-1.5 rounded-lg transition-colors ${isRightPanelOpen ? 'bg-indigo-100 text-indigo-600' : 'bg-gray-100 hover:bg-gray-200 text-gray-600'}`}
@@ -1925,6 +1971,105 @@ function PresentationEditorInner({
           )}
         </>
       )}
+
+      {/* ── Fullscreen Slideshow Overlay ── */}
+      {showSlideshow && (() => {
+        const slide = slides[slideshowIndex]
+        const scaledW = CANVAS_W * slideshowScale
+        const scaledH = CANVAS_H * slideshowScale
+        return (
+          <div
+            className="fixed inset-0 bg-black flex items-center justify-center"
+            style={{ zIndex: 9999 }}
+            onClick={ssNext}
+          >
+            {/* Keyframe animations — translateX is in % of the scaled wrapper */}
+            <style>{`
+              @keyframes ss-in-next { from { opacity:0; transform:translateX(5%) } to { opacity:1; transform:translateX(0) } }
+              @keyframes ss-in-prev { from { opacity:0; transform:translateX(-5%) } to { opacity:1; transform:translateX(0) } }
+            `}</style>
+
+            {/* Outer wrapper: exact visual size so flex centers it correctly */}
+            <div
+              style={{ width: scaledW, height: scaledH, overflow: 'hidden', flexShrink: 0 }}
+              onClick={e => e.stopPropagation()}
+            >
+              {/* key triggers remount → fresh animation on every navigation */}
+              <div
+                key={slideshowIndex}
+                style={{
+                  width: '100%',
+                  height: '100%',
+                  animation: `${slideshowDir === 'next' ? 'ss-in-next' : 'ss-in-prev'} 380ms cubic-bezier(0.4,0,0.2,1) both`,
+                }}
+              >
+                {/* Inner 1920×1080 canvas scaled to fit */}
+                <div
+                  style={{
+                    width: CANVAS_W,
+                    height: CANVAS_H,
+                    transform: `scale(${slideshowScale})`,
+                    transformOrigin: 'top left',
+                    ...buildSlideStyle(slide),
+                    fontFamily: ALL_FONTS.find(f => f.name === (slide?.style?.fontFamily || 'Inter'))?.family || 'Inter, sans-serif',
+                  }}
+                >
+                  <CanvasScaleContext.Provider value={slideshowScale}>
+                    {slide?.elements.map(el => (
+                      <ElementWrapper
+                        key={el.id}
+                        element={el}
+                        isSelected={false}
+                        isMultiSelected={false}
+                        onSelect={() => {}}
+                        onUpdate={() => {}}
+                        onRemove={() => {}}
+                        otherRects={[]}
+                        canvasW={CANVAS_W}
+                        canvasH={CANVAS_H}
+                        onSnapGuides={() => {}}
+                      />
+                    ))}
+                  </CanvasScaleContext.Provider>
+                </div>
+              </div>
+            </div>
+
+            {/* Controls */}
+            <div className="fixed top-4 right-4 flex items-center gap-2" style={{ zIndex: 10000 }} onClick={e => e.stopPropagation()}>
+              <span className="text-white/70 text-sm font-medium tabular-nums">{slideshowIndex + 1} / {slides.length}</span>
+              <button
+                onClick={() => setShowSlideshow(false)}
+                className="w-9 h-9 rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center text-white transition-colors"
+              >
+                <XIcon size={18} />
+              </button>
+            </div>
+
+            {/* Prev arrow */}
+            {slideshowIndex > 0 && (
+              <button
+                className="fixed left-4 top-1/2 -translate-y-1/2 w-11 h-11 rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center text-white transition-colors"
+                style={{ zIndex: 10000 }}
+                onClick={e => { e.stopPropagation(); ssPrev() }}
+              >
+                <ChevronLeft size={24} />
+              </button>
+            )}
+
+            {/* Next arrow */}
+            {slideshowIndex < slides.length - 1 && (
+              <button
+                className="fixed right-4 top-1/2 -translate-y-1/2 w-11 h-11 rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center text-white transition-colors"
+                style={{ zIndex: 10000 }}
+                onClick={e => { e.stopPropagation(); ssNext() }}
+              >
+                <ChevronRight size={24} />
+              </button>
+            )}
+          </div>
+        )
+      })()}
 
       {/* ── Hidden Export Container (1:1 scale, all slides) ── */}
       <div
