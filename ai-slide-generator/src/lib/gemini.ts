@@ -239,7 +239,15 @@ JSON Structure:
   }
 }
 
-export async function generateOutline(prompt: string, slideCount: number = 5, tone: string = 'business', audience: string = 'General', customApiKey?: string): Promise<AiResponse<any>> {
+export async function generateOutline(
+  prompt: string,
+  slideCount: number = 5,
+  tone: string = 'business',
+  audience: string = 'General',
+  customApiKey?: string,
+  fileContext?: string,
+  imageFiles?: Array<{ filename: string; url: string }>,
+): Promise<AiResponse<any>> {
   const startTime = performance.now()
   let apiKey = customApiKey || await getSettingByKey('GEMINI_API_KEY')
   if (!apiKey) apiKey = process.env.GEMINI_API_KEY ?? null
@@ -281,16 +289,37 @@ TOPIC: ${prompt}
 NUMBER OF SLIDES: ${slideCount}
 AUDIENCE: ${audience}
 STYLE/TONE: ${selectedTone}
+${fileContext ? `\nADDITIONAL CONTEXT FROM ATTACHED TEXT FILES (use this to make the outline accurate and relevant):\n${fileContext}\n` : ''}${imageFiles?.length ? `
+================================================================================
+ATTACHED IMAGES — DECIDE USAGE FOR EACH (REQUIRED)
+================================================================================
+The user has attached the following images. For each image decide the best usage:
+${imageFiles.map(f => `- "${f.filename}" (url: ${f.url})`).join('\n')}
 
-Return ONLY the following JSON array format, with absolutely no additional text or markdown formatting:
-[
-  {
-    "slideNumber": 1,
-    "title": "Slide Title",
-    "coreMessage": "Core meaning/message of the slide (1-2 sentences)",
-    "suggestedVisual": "Suggested visual design or image"
-  }
-]
+Usage options:
+- "background" → use as a visual background across all slides (best for scenic, textural, atmospheric photos)
+- "element"    → display as a content image on the most relevant slide (best for diagrams, charts, product photos, portraits). Also specify slideNumber (1-based).
+- "context"    → use only as reference to understand content, do NOT display visually (best for screenshots, logos, reference material)
+
+You MUST include imageDecisions for every attached image in your JSON response.
+================================================================================
+` : ''}
+Return ONLY the following JSON object (no markdown, no extra text):
+{
+  "slides": [
+    {
+      "slideNumber": 1,
+      "title": "Slide Title",
+      "coreMessage": "Core meaning/message of the slide (1-2 sentences)",
+      "suggestedVisual": "Suggested visual design or image"
+    }
+  ],
+  "imageDecisions": [
+    { "filename": "photo.jpg", "usage": "background" },
+    { "filename": "chart.png", "usage": "element", "slideNumber": 2 },
+    { "filename": "logo.png", "usage": "context" }
+  ]
+}
 `
 
   let inputTokens = 0
@@ -311,20 +340,28 @@ Return ONLY the following JSON array format, with absolutely no additional text 
 
     // JSON тазалоо
     const cleanJson = text.replace(/```json|```/gi, '').trim()
-    let content: any = null
+    let slides: any = null
+    let imageDecisions: any[] = []
     let isValid = false
 
     try {
-      content = JSON.parse(cleanJson)
-      if (Array.isArray(content)) {
+      const parsed = JSON.parse(cleanJson)
+      // New format: { slides: [...], imageDecisions: [...] }
+      // Old format (array) kept for backward compat
+      if (parsed && typeof parsed === 'object' && Array.isArray(parsed.slides)) {
+        slides = parsed.slides
+        imageDecisions = Array.isArray(parsed.imageDecisions) ? parsed.imageDecisions : []
+        isValid = true
+      } else if (Array.isArray(parsed)) {
+        slides = parsed
         isValid = true
       }
     } catch (e) {
       console.error('Failed to parse Gemini outline response as JSON:', e)
     }
-    
+
     return {
-      content,
+      content: { slides, imageDecisions },
       metadata: {
         rawResponse: text,
         fullPrompt: systemPrompt,
@@ -363,6 +400,39 @@ Return ONLY the following JSON array format, with absolutely no additional text 
   }
 }
 
+const COLOR_PALETTES: Record<string, { bg: string; titleColor: string; detailColor: string; accents: string[] }> = {
+  'Modern Dark': {
+    bg: '#0D1117',
+    titleColor: '#FFFFFF',
+    detailColor: '#8B949E',
+    accents: ['#4ECDC4', '#4ADE80', '#F59E0B', '#EC4899'],
+  },
+  'Minimalist Light': {
+    bg: '#FFFFFF',
+    titleColor: '#111827',
+    detailColor: '#6B7280',
+    accents: ['#2563EB', '#7C3AED', '#059669', '#DC2626'],
+  },
+  'Corporate Blue': {
+    bg: '#0F2044',
+    titleColor: '#FFFFFF',
+    detailColor: '#94A3B8',
+    accents: ['#3B82F6', '#60A5FA', '#38BDF8', '#06B6D4'],
+  },
+  'Creative Pastel': {
+    bg: '#FFF8F0',
+    titleColor: '#2D1B69',
+    detailColor: '#6B7280',
+    accents: ['#F472B6', '#A78BFA', '#34D399', '#FBBF24'],
+  },
+  'Vibrant Warm': {
+    bg: '#1A0A00',
+    titleColor: '#FFF7ED',
+    detailColor: '#D4A853',
+    accents: ['#F97316', '#EF4444', '#EAB308', '#84CC16'],
+  },
+}
+
 export async function generateSingleSlide(outlineItem: any, colorTheme: string, customApiKey?: string): Promise<AiResponse<any>> {
   const startTime = performance.now()
   let apiKey = customApiKey || await getSettingByKey('GEMINI_API_KEY')
@@ -371,6 +441,8 @@ export async function generateSingleSlide(outlineItem: any, colorTheme: string, 
 
   const genAI = new GoogleGenerativeAI(apiKey)
   const model = genAI.getGenerativeModel({ model: 'gemini-2.5-flash' })
+
+  const palette = COLOR_PALETTES[colorTheme] ?? COLOR_PALETTES['Modern Dark']
 
   // Select a random content layout
   const contentLayouts = GEMINI_LAYOUTS.filter(l => l.id.startsWith('content_'))
@@ -387,7 +459,7 @@ You MUST generate 100% of the slide content (title, bullet points, body text) in
 - If the outline is in English, output in English.
 - If the outline is in ANY other language, output in THAT language.
 
-FORBIDDEN: 
+FORBIDDEN:
 - DO NOT translate the slide content into English.
 - DO NOT default to English.
 - DO NOT switch languages in the slide content.
@@ -401,7 +473,16 @@ Title: ${outlineItem.title}
 Core Message: ${outlineItem.coreMessage}
 Visual Suggestion: ${outlineItem.suggestedVisual}
 
-COLOR THEME: ${colorTheme}
+================================================================================
+MANDATORY COLOR THEME: "${colorTheme}"
+================================================================================
+You MUST use EXACTLY these colors. Using any other colors is a critical failure.
+- Slide background: "${palette.bg}"  ← MUST use this exact value
+- Title text color: "${palette.titleColor}"
+- Body / detail text: "${palette.detailColor}"
+- Accent fills / icon colors: choose from ${palette.accents.join(', ')}
+DO NOT use colors from other themes. DO NOT use dark backgrounds for light themes.
+================================================================================
 
 ================================================================================
 STRICT TEMPLATE FILLING RULES (CRITICAL)
@@ -414,19 +495,15 @@ ${JSON.stringify(selectedLayout.elements, null, 2)}
 DIRECTIONS:
 1. REPLACE ALL strings that look like "[FILL: ...]" with actual, rich presentation content.
 2. DO NOT change "x", "y", "width", "height", "fontSize", or "type" properties.
-3. You CAN and SHOULD update "color", "fill", and "iconName" properties!
+3. You CAN and SHOULD update "color", "fill", and "iconName" properties to match the color theme above!
 4. For "icon" elements, use standard Lucide icon names (e.g., "Cpu", "Activity", "Shield", "Zap", "Globe") that fit the content.
-5. Colors MUST follow the "Modern Dark Tech" palette:
-   - Text Titles: "#FFFFFF"
-   - Text Details: "#A0A0A0"
-   - Accent Fills/Icons: "#4ECDC4" (Cyan), "#4ADE80" (Green), "#F59E0B" (Orange), or "#EC4899" (Pink).
-   - Background: Always use "#121212" (unless the template specifies a Different background).
 
 Return ONLY raw JSON. Do NOT include markdown formatting like \`\`\`json.
 {
   "title": "${outlineItem.title}",
-  "background": "#121212",
-  "titleColor": "#ffffff",
+  "background": "${palette.bg}",
+  "titleColor": "${palette.titleColor}",
+  "bg": { "type": "solid", "value": "${palette.bg}" },
   "elements": [
     // EXACT elements array from the template, with [FILL: ...] replaced by your excellent content
   ],

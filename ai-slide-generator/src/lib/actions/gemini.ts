@@ -144,7 +144,15 @@ export async function generateAndSavePresentation(userId: string, prompt: string
   }
 }
 
-export async function generateOutlineAction(prompt: string, slideCount: number = 5, tone: string = 'business', audience: string = 'General', customApiKey?: string) {
+export async function generateOutlineAction(
+  prompt: string,
+  slideCount: number = 5,
+  tone: string = 'business',
+  audience: string = 'General',
+  customApiKey?: string,
+  fileContext?: string,
+  imageFiles?: Array<{ filename: string; url: string }>,
+) {
   const session = await getCurrentSession()
   let logId: string | null = null
 
@@ -158,7 +166,9 @@ export async function generateOutlineAction(prompt: string, slideCount: number =
   }
 
   try {
-    const { content: outline, metadata } = await generateOutline(prompt, slideCount, tone, audience, customApiKey)
+    const { content, metadata } = await generateOutline(
+      prompt, slideCount, tone, audience, customApiKey, fileContext, imageFiles
+    )
 
     if (logId) {
       await updateAiLog(logId, {
@@ -171,7 +181,11 @@ export async function generateOutlineAction(prompt: string, slideCount: number =
       })
     }
 
-    return { success: true, data: outline }
+    return {
+      success: true,
+      data: content.slides ?? content,
+      imageDecisions: (content.imageDecisions ?? []) as Array<{ filename: string; usage: 'background' | 'element' | 'context'; slideNumber?: number }>,
+    }
   } catch (error: any) {
     console.error('Outline Action Error:', error)
 

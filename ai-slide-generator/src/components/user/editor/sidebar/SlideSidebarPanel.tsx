@@ -12,7 +12,7 @@ import type { Slide, SlideLayoutType } from '@/types/elements'
 interface SlideSidebarPanelProps {
   isSaving: boolean
   presentationId: string
-  onExport: (type: 'pptx' | 'pdf' | 'png') => void
+  onExport: (type: 'pptx' | 'pdf') => void
   isExporting: boolean
   onCopyShareLink: () => void
 }
@@ -185,10 +185,6 @@ export function SlideSidebarPanel({
             ↓ PDF
           </button>
         </div>
-        <button onClick={() => onExport('png')} disabled={isExporting}
-          className="w-full text-[11px] bg-gray-50 border border-gray-200 text-gray-700 px-2 py-1.5 rounded-lg font-semibold hover:bg-green-50 hover:text-green-600 hover:border-green-200 disabled:opacity-50 transition-all flex items-center justify-center gap-1">
-          ↓ PNG
-        </button>
         <button onClick={onCopyShareLink}
           className="w-full text-[11px] bg-indigo-600 text-white px-2 py-1.5 rounded-lg font-semibold hover:bg-indigo-700 transition-all flex items-center justify-center gap-1">
           🔗 Бөлүшүү

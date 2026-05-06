@@ -72,6 +72,9 @@ export function MyComponent() {
 
 **Editor-specific translation keys** live under `editor.*` (e.g. `editor.tabHome`, `editor.insertShape`, `editor.bgColor`). The editor component imports `useT` and uses these keys for all toolbar text.
 
+**Wizard-specific translation keys** added under `form.*`:
+`createOutline`, `outlineReady`, `outlineSubtitle`, `coreMessage`, `slideTitle`, `regenerateOutline`, `backToInput`, `generateFromOutline`, `attachFile`, `attachedFiles`, `removeFile`.
+
 ### Authentication
 
 Auth is split across two systems:
@@ -95,6 +98,8 @@ Auth helpers are split for this reason:
 
 Business logic uses **Server Actions** (`'use server'`) in `src/lib/actions/`:
 - `gemini.ts` — `generateAndSavePresentation`, `generateSingleSlideAction`, `generateOutlineAction`, `textAiAction`
+  - `generateOutlineAction(prompt, slideCount, tone, audience, customApiKey?, fileContext?, imageFiles?)` — returns `{ success, data: OutlineItem[], imageDecisions: ImageDecision[] }`
+  - `generateSingleSlideAction(outlineItem, colorTheme, customApiKey?, presentationId?, slideIndex?)` — colors driven by `COLOR_PALETTES[colorTheme]`
 - `analytics.ts` — `logPresentationEvent`, `getPresentationAnalytics`, `getPresentationTokenSummary`, `getAllPresentationsAnalytics`
 - `user.ts` — CRUD for presentations and users; includes `updateUserLanguage(userId, lang)`
 - `payments.ts` — subscription approve/reject + Telegram notification
@@ -109,16 +114,74 @@ Business logic uses **Server Actions** (`'use server'`) in `src/lib/actions/`:
 - `/api/user/language` — `POST` — saves preferred language to `users.preferred_language`
 - `/api/analytics/event` — `POST` — logs user slide actions (add/delete/duplicate) from the editor client
 
+### Presentation Creation Wizard
+
+`PresentationForm` (`src/components/user/PresentationForm.tsx`) uses a **3-step wizard** (KIMI-style), not a single form:
+
+**Step 1 — Input (`step === 'input'`)**
+- Large textarea for topic/prompt
+- File attachment button (paperclip): accepts images (PNG/JPG/WEBP) and text files (.txt/.md)
+  - Images → uploaded via `POST /api/upload`, stored as URL in `AttachedFile.content`
+  - Text files → read in browser via `file.text()`, capped at 8 000 chars
+- Advanced collapse: slide count (3–15) + custom Gemini API key
+- "Create Outline" button → calls `generateOutlineAction`
+
+**Step 2 — Outline review (`step === 'outline'`)**
+- Horizontal-scrollable style/template picker (12 templates)
+- Accordion list of slides — each item is collapsible, showing editable `title` and `coreMessage` inputs
+- "Regenerate Outline" button re-calls `generateOutlineAction` with same inputs
+- "Generate Presentation" button → starts Step 3
+
+**Step 3 — Generating (`step === 'generating'`)**
+- Per-slide progress bar; calls `generateSingleSlideAction` in a loop
+- After all slides: applies `imageDecisions` (see below), then `createPresentation`, then redirects to `/editor/[id]`
+
+**File attachment & AI image decisions:**
+
+Text files are passed as `fileContext` (plain text) to the outline prompt — AI uses them to inform slide content.
+
+Images are passed separately as `imageFiles: Array<{ filename, url }>`. The outline prompt asks AI to decide for each image:
+
+| Decision | When AI uses it | Effect |
+|---|---|---|
+| `"background"` | Scenic/textural/atmospheric photo | Applied as `bg: { type:'image', value, overlayColor:'#000', overlayOpacity:0.35 }` on every slide |
+| `"element"` | Diagram, product photo, portrait | Inserted as an `image` element (`x:1080, y:120, w:720, h:840`) on the target `slideNumber` |
+| `"context"` | Logo, screenshot, reference material | Not displayed; used only to inform content generation |
+
+`imageDecisions` are stored in React state after Step 2 and applied post-generation in `handleGenerate`.
+
 ### AI Generation Flow
 
-1. `generateAndSavePresentation` (Server Action) calls `generateSlides` in `src/lib/gemini.ts`
-2. Gemini returns a JSON presentation structure with slides and elements
-3. Any element `src` or slide `background` that starts with `stock:<query>` gets resolved to a real URL via `getRandomStockImage` from `src/lib/images.ts`
-4. The resolved presentation is saved to SQLite (`presentations` table, `slides` column is a JSON string)
-5. An `ai_generate_presentation` event is written to `presentation_events` with full token/cost data
-6. User is redirected to `/editor/[id]`
+The legacy `generateAndSavePresentation` (one-shot) still exists but the main creation path is the **wizard flow** above.
+
+Wizard flow:
+1. `generateOutlineAction` → `generateOutline` in `src/lib/gemini.ts`
+   - Returns `{ slides: OutlineItem[], imageDecisions: ImageDecision[] }`
+   - Accepts: `prompt, slideCount, tone, audience, customApiKey?, fileContext?, imageFiles?`
+2. User reviews/edits outline in accordion (Step 2)
+3. For each slide: `generateSingleSlideAction` → `generateSingleSlide`
+   - Colors are theme-aware via `COLOR_PALETTES` dict (see below)
+4. `imageDecisions` applied to the slides array (background / element / context)
+5. `createPresentation` saves to SQLite
+6. Redirect to `/editor/[id]`
+
+Any element `src` or slide `background` starting with `stock:<query>` is resolved to a real URL via `getRandomStockImage` from `src/lib/images.ts` (inside `generateSingleSlideAction`).
 
 Gemini is called with the API key loaded at runtime from the `settings` table (not just env), so key changes take effect without redeploy.
+
+**Color palettes (`COLOR_PALETTES` in `src/lib/gemini.ts`):**
+
+The `generateSingleSlide` function maps `colorTheme` → a palette before building the prompt. The palette sets background, title color, detail color, and accent options. Colors are **never hardcoded** in the prompt — always derived from the palette.
+
+| colorTheme | Background | Title |
+|---|---|---|
+| `Modern Dark` | `#0D1117` | `#FFFFFF` |
+| `Minimalist Light` | `#FFFFFF` | `#111827` |
+| `Corporate Blue` | `#0F2044` | `#FFFFFF` |
+| `Creative Pastel` | `#FFF8F0` | `#2D1B69` |
+| `Vibrant Warm` | `#1A0A00` | `#FFF7ED` |
+
+The AI also returns `"bg": { "type": "solid", "value": "..." }` in its JSON — this ensures the structured `bg` field (which takes precedence in `buildSlideStyle`) is always set correctly.
 
 **`AiResponse<T>.metadata`** fields returned by all three Gemini functions (`generateSlides`, `generateOutline`, `generateSingleSlide`):
 - `inputTokens`, `outputTokens`, `tokensUsed` — from `response.usageMetadata`
@@ -197,10 +260,11 @@ Slide background is stored in two fields on `Slide`:
 
 ### Export
 
-`src/lib/export.ts` handles all three formats:
+`src/lib/export.ts` handles two formats:
 - **PPTX** — `pptxgenjs` maps slide elements to native PPTX shapes
 - **PDF** — `html2canvas` renders the canvas DOM node, then `jsPDF` wraps it
-- **PNG** — `html-to-image` renders individual slides
+
+PNG export has been removed. The `handleExport` function in `PresentationEditor.tsx` and `SlideSidebarPanel.tsx` accept only `'pptx' | 'pdf'`.
 
 `next.config.js` sets `serverActions.bodySizeLimit: '10mb'` to support image upload payloads.
 

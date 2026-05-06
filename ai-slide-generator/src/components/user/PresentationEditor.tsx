@@ -2,7 +2,7 @@
 
 import { useState, useRef, useEffect, useCallback } from 'react'
 import { updatePresentation } from '@/lib/actions/user'
-import { exportToPPTX, exportToPDF, exportToImage } from '@/lib/export'
+import { exportToPPTX, exportToPDF } from '@/lib/export'
 import 'katex/dist/katex.min.css'
 import { BlockMath } from 'react-katex'
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter'
@@ -760,12 +760,11 @@ function PresentationEditorInner({
     reader.readAsDataURL(file)
   }
 
-  const handleExport = async (type: 'pptx' | 'pdf' | 'png') => {
+  const handleExport = async (type: 'pptx' | 'pdf') => {
     setIsExporting(true)
     try {
       if (type === 'pptx') await exportToPPTX(initialPresentation.title, slides)
-      else if (type === 'pdf') await exportToPDF('export-container', initialPresentation.title, slides.length)
-      else await exportToImage('export-container', initialPresentation.title, slides.length)
+      else await exportToPDF('export-container', initialPresentation.title, slides.length)
     } catch (e: any) {
       console.error(e)
       alert(`Экспорттоо катасы: ${e.message || 'Белгисиз ката'}`)
