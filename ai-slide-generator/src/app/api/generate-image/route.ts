@@ -9,14 +9,8 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: 'Prompt is required' }, { status: 400 })
     }
 
-    // Get API key from settings or env
-    let apiKey = process.env.GEMINI_API_KEY
-    try {
-      const dbKey = await getSettingByKey('GEMINI_API_KEY')
-      if (dbKey) apiKey = dbKey
-    } catch (e) {
-      console.error("Could not fetch API key from settings", e)
-    }
+    let apiKey = await getSettingByKey('GEMINI_API_KEY')
+    if (!apiKey) apiKey = process.env.GEMINI_API_KEY ?? null
 
     if (!apiKey) {
       return NextResponse.json({ error: 'Gemini API key not configured' }, { status: 500 })

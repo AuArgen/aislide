@@ -234,15 +234,7 @@ function throwProviderError(
 
 export async function generateSlides(prompt: string, slideCount: number = 5, tone: string = 'business', customApiKey?: string): Promise<AiResponse<any>> {
   const startTime = performance.now()
-  let apiKey = customApiKey || await getSettingByKey('GEMINI_API_KEY')
-
-  if (!apiKey) {
-    apiKey = process.env.GEMINI_API_KEY ?? null
-  }
-
-  if (!apiKey) {
-    throw new Error('Gemini API key is not configured in settings or environment variables')
-  }
+  const apiKey = await getProviderApiKey('gemini', customApiKey)
 
   const genAI = new GoogleGenerativeAI(apiKey)
   const model = genAI.getGenerativeModel({ model: 'gemini-2.5-flash' }) // Using pro for better structural understanding
@@ -514,14 +506,15 @@ Return ONLY the following JSON object (no markdown, no extra text):
   let inputTokens = 0
   let outputTokens = 0
   let totalTokens = 0
-  const apiKeyMask = customApiKey ? maskApiKey(customApiKey) : undefined
-  
+  let apiKeyMask: string | undefined
+
   try {
     const completion = await generateProviderText(provider, systemPrompt, customApiKey, modelId)
+    apiKeyMask = completion.apiKeyMask
     const text = completion.text
-    
+
     const durationMs = performance.now() - startTime
-    
+
     inputTokens = completion.inputTokens
     outputTokens = completion.outputTokens
     totalTokens = completion.totalTokens
@@ -684,11 +677,12 @@ Return ONLY raw JSON. Do NOT include markdown formatting like \`\`\`json.
   let totalTokens = 0
   let inputTokens = 0
   let outputTokens = 0
-  const apiKeyMask = customApiKey ? maskApiKey(customApiKey) : undefined
+  let apiKeyMask: string | undefined
 
   try {
     const completion = await generateProviderText(provider, systemPrompt, customApiKey, modelId)
-    
+    apiKeyMask = completion.apiKeyMask
+
     inputTokens = completion.inputTokens
     outputTokens = completion.outputTokens
     totalTokens = completion.totalTokens
